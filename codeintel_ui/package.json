@@ -1,0 +1,23 @@
+{
+  "name": "codebase-analyzer-ui",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "d3": "^7.9.0",
+    "three": "^0.168.0",
+    "recharts": "^2.12.7",
+    "framer-motion": "^11.3.31"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.2"
+  }
+}

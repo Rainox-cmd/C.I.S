@@ -1,0 +1,20 @@
+# ─── Core UI ──────────────────────────────────────────────────────────────────
+textual>=0.47.0
+rich>=13.7.0
+
+# ─── Analysis engine (Phase 2) ────────────────────────────────────────────────
+networkx>=3.2
+matplotlib>=3.8
+
+# ─── AI client (Phase 6) ──────────────────────────────────────────────────────
+openai>=1.12.0          # Used for NVIDIA NIM OpenAI-compatible API
+
+# ─── Utilities ────────────────────────────────────────────────────────────────
+# (all stdlib — no extra deps needed for Phase 1/2)
+# ast         → stdlib
+# subprocess  → stdlib
+# zipfile     → stdlib
+# asyncio     → stdlib
+# argparse    → stdlib
+# difflib     → stdlib
+# pathlib     → stdlib
