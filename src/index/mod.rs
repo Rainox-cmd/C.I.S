@@ -18,9 +18,31 @@ impl Index {
                 .context("Failed to set WAL mode")?;
         }
 
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .context("Failed to enable foreign keys")?;
+
         let index = Self { conn };
         index.ensure_schema()?;
         Ok(index)
+    }
+
+    pub fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
+    pub fn integrity_check(&self) -> Result<bool> {
+        let result: String = self
+            .conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .context("Failed to run integrity check")?;
+        Ok(result == "ok")
+    }
+
+    pub fn count_records(&self, table: &str) -> Result<i64> {
+        let query = format!("SELECT COUNT(*) FROM {}", table);
+        self.conn
+            .query_row(&query, [], |row| row.get(0))
+            .with_context(|| format!("Failed to count records in {}", table))
     }
 
     pub fn doctor(&self) -> Result<()> {
@@ -45,11 +67,17 @@ impl Index {
     }
 
     pub fn status(&self) -> Result<()> {
-        let file_count: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
-            .unwrap_or(0);
+        let file_count = self.count_records("files")?;
+        let symbol_count = self.count_records("symbols")?;
+        let dep_count = self.count_records("dependencies")?;
+        let pm_count = self.count_records("project_memory")?;
+        let sm_count = self.count_records("session_memory")?;
+
         println!("Indexed files: {}", file_count);
+        println!("Indexed symbols: {}", symbol_count);
+        println!("Indexed dependencies: {}", dep_count);
+        println!("Project memory entries: {}", pm_count);
+        println!("Session memory entries: {}", sm_count);
         Ok(())
     }
 

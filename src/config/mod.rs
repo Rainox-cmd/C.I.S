@@ -39,6 +39,9 @@ pub struct SecurityConfig {
     pub max_output_bytes: u64,
     pub command_allowlist: Vec<String>,
     pub command_denylist: Vec<String>,
+    pub require_confirmation_for_risky: bool,
+    pub restrict_to_project_root: bool,
+    pub redact_secrets: bool,
 }
 
 impl Default for Config {
@@ -97,7 +100,13 @@ impl Default for Config {
                     "rm -rf".into(),
                     "del /s".into(),
                     "format".into(),
+                    "shutdown".into(),
+                    "diskpart".into(),
+                    "fdisk".into(),
                 ],
+                require_confirmation_for_risky: true,
+                restrict_to_project_root: true,
+                redact_secrets: true,
             },
         }
     }
@@ -163,6 +172,15 @@ impl Config {
                 }
                 "max_output_bytes" => {
                     self.security.max_output_bytes = value.parse()?
+                }
+                "require_confirmation_for_risky" => {
+                    self.security.require_confirmation_for_risky = value.parse()?
+                }
+                "restrict_to_project_root" => {
+                    self.security.restrict_to_project_root = value.parse()?
+                }
+                "redact_secrets" => {
+                    self.security.redact_secrets = value.parse()?
                 }
                 _ => anyhow::bail!("Unknown config key: {}", key),
             },

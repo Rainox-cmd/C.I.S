@@ -1,9 +1,17 @@
+#[allow(dead_code, unused_imports)]
 mod cli;
 mod config;
+#[allow(dead_code)]
+mod diagnostics;
+#[allow(dead_code)]
 mod index;
 mod parser;
 mod project;
 mod scanner;
+#[allow(dead_code, unused_imports)]
+mod security;
+#[allow(dead_code, unused_imports)]
+mod terminal;
 
 use clap::Parser;
 use anyhow::Result;

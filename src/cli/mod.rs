@@ -1,7 +1,8 @@
-use clap::{Parser, Subcommand};
 use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
+use std::process;
 
-use crate::{config, index, parser, project, scanner};
+use crate::{config, diagnostics, index, parser, project, scanner, terminal};
 
 #[derive(Parser)]
 #[command(name = "cis")]
@@ -14,25 +15,42 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Initialize a new C.I.S. project
     Init,
+    /// Run diagnostic checks on the C.I.S. installation and project
     Doctor,
+    /// Show project index statistics
     Status,
+    /// Scan project files and index them
     Scan {
         #[command(flatten)]
         options: ScanOptions,
     },
+    /// Parse a source file and extract symbols
     Parse {
         path: String,
     },
+    /// Show or modify configuration
     Config {
         #[command(subcommand)]
         action: ConfigAction,
+    },
+    /// Execute a command through the secure terminal executor
+    Run {
+        /// Skip confirmation for risky commands
+        #[arg(short, long)]
+        yes: bool,
+        /// Command and arguments to execute
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, value_name = "COMMAND")]
+        args: Vec<String>,
     },
 }
 
 #[derive(Subcommand)]
 pub enum ConfigAction {
+    /// Show current configuration
     Show,
+    /// Set a configuration value (format: <section>.<field>)
     Set {
         key: String,
         value: String,
@@ -58,19 +76,37 @@ impl Cli {
                 println!("Initialized C.I.S. in {}", project.root.display());
                 println!("Config: {}", project.cis_dir().join("config.toml").display());
                 println!("Database: {}", project.db_path().display());
+                println!("Logs: {}", project.logs_dir.display());
+                println!("Cache: {}", project.cache_dir.display());
                 Ok(())
             }
             Commands::Doctor => {
                 let project = project::Project::discover()?;
                 let cfg = config::Config::load(&project)?;
                 let idx = index::Index::open(&project, &cfg)?;
-                idx.doctor()?;
+
+                tracing::info!("Running diagnostic checks");
+
+                let report = diagnostics::run_all_checks(&project, &cfg, &idx);
+                report.print();
+
+                if !report.is_healthy() {
+                    process::exit(1);
+                }
                 Ok(())
             }
             Commands::Status => {
                 let project = project::Project::discover()?;
                 let cfg = config::Config::load(&project)?;
                 let idx = index::Index::open(&project, &cfg)?;
+
+                println!("C.I.S. Status");
+                println!("=============");
+                println!("Project root: {}", project.root.display());
+                println!("C.I.S. initialized: yes");
+                println!("Config: {}", project.cis_dir().join("config.toml").display());
+                println!();
+
                 idx.status()?;
                 Ok(())
             }
@@ -78,19 +114,28 @@ impl Cli {
                 let project = project::Project::discover()?;
                 let cfg = config::Config::load(&project)?;
                 let idx = index::Index::open(&project, &cfg)?;
-                
-                let scan_root = options.path
+
+                let scan_root = options
+                    .path
                     .map(|p| project.root.join(p))
                     .unwrap_or_else(|| project.root.clone());
 
                 if options.incremental {
                     let previous = idx.get_file_hashes()?;
-                    let scanner = scanner::Scanner::new(scan_root, cfg.scanner.respect_gitignore, cfg.scanner.respect_cisignore);
+                    let scanner = scanner::Scanner::new(
+                        scan_root,
+                        cfg.scanner.respect_gitignore,
+                        cfg.scanner.respect_cisignore,
+                    );
                     let result = scanner.scan_incremental(&previous)?;
                     println!("Incremental scan complete: {} files", result.files.len());
                     idx.upsert_files(&result.files)?;
                 } else {
-                    let scanner = scanner::Scanner::new(scan_root, cfg.scanner.respect_gitignore, cfg.scanner.respect_cisignore);
+                    let scanner = scanner::Scanner::new(
+                        scan_root,
+                        cfg.scanner.respect_gitignore,
+                        cfg.scanner.respect_cisignore,
+                    );
                     let result = scanner.scan()?;
                     println!("Scan complete: {} files", result.files.len());
                     idx.upsert_files(&result.files)?;
@@ -100,20 +145,25 @@ impl Cli {
             Commands::Parse { path } => {
                 let content = std::fs::read_to_string(&path)
                     .with_context(|| format!("Failed to read {}", path))?;
-                
+
                 let ext = std::path::Path::new(&path)
                     .extension()
                     .and_then(|e| e.to_str())
                     .map(|e| format!(".{}", e.to_lowercase()))
                     .unwrap_or_default();
 
-                let language = scanner::LANGUAGE_MAP.iter()
+                let language = scanner::LANGUAGE_MAP
+                    .iter()
                     .find(|(e, _)| *e == ext)
                     .map(|(_, l)| *l)
                     .unwrap_or("Other");
 
-                let result = parser::ParserEngine::parse_file(std::path::Path::new(&path), &content, language);
-                
+                let result = parser::ParserEngine::parse_file(
+                    std::path::Path::new(&path),
+                    &content,
+                    language,
+                );
+
                 println!("Parsed: {} ({})", path, language);
                 println!("Syntax OK: {}", result.syntax_ok);
                 if let Some(err) = result.syntax_error {
@@ -121,11 +171,12 @@ impl Cli {
                 }
                 println!("\nSymbols ({}):", result.symbols.len());
                 for sym in &result.symbols {
-                    println!("  {} {}:{}", format!("{:?}", sym.kind), sym.name, sym.line);
+                    println!("  {:?} {}:{}", sym.kind, sym.name, sym.line);
                 }
                 println!("\nImports ({}):", result.imports.len());
                 for imp in &result.imports {
-                    println!("  {} ({})", imp.path, if imp.is_relative { "relative" } else { "absolute" });
+                    let rel = if imp.is_relative { "relative" } else { "absolute" };
+                    println!("  {} ({})", imp.path, rel);
                 }
                 Ok(())
             }
@@ -144,6 +195,63 @@ impl Cli {
                         Ok(())
                     }
                 }
+            }
+            Commands::Run { yes, args } => {
+                if args.is_empty() {
+                    anyhow::bail!("No command specified. Usage: cis run [--yes] <command> [args...]");
+                }
+
+                let project = project::Project::discover()?;
+                let cfg = config::Config::load(&project)?;
+
+                let executor = terminal::TerminalExecutor::from_config(
+                    project.root.clone(),
+                    project.logs_dir.clone(),
+                    &cfg,
+                );
+
+                let command = &args[0];
+                let cmd_args: Vec<&str> = args[1..].iter().map(String::as_str).collect();
+
+                let result = executor.execute(command, &cmd_args, None, yes)?;
+
+                if result.requires_confirmation {
+                    println!(
+                        "Risky command requires confirmation: {}",
+                        result
+                            .risk_description
+                            .as_deref()
+                            .unwrap_or("unknown risk")
+                    );
+                    println!("Review the command and rerun with --yes to proceed.");
+                    process::exit(2);
+                }
+
+                if result.is_blocked() {
+                    println!("Command blocked by security policy: {}", result.stderr);
+                    process::exit(1);
+                }
+
+                if result.is_timed_out() {
+                    println!(
+                        "Command timed out after {} seconds",
+                        cfg.security.default_timeout_seconds
+                    );
+                    process::exit(124);
+                }
+
+                if !result.stdout.is_empty() {
+                    print!("{}", result.stdout);
+                }
+                if !result.stderr.is_empty() {
+                    eprint!("{}", result.stderr);
+                }
+
+                if result.exit_code != 0 {
+                    process::exit(result.exit_code);
+                }
+
+                Ok(())
             }
         }
     }
