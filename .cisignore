@@ -1,0 +1,70 @@
+# C.I.S. ignore patterns
+# These patterns are respected by the Rust scanner when respect_cisignore is enabled.
+# Syntax follows standard .gitignore conventions (simple glob patterns).
+
+# Version control
+.git/
+.hg/
+.svn/
+
+# C.I.S. internal data
+.cis/
+
+# Rust build artifacts
+target/
+
+# Node.js / JavaScript
+node_modules/
+.npm/
+.yarn/
+.pnpm/
+.next/
+.nuxt/
+.dist/
+.parcel-cache/
+
+# Python virtual environments and caches
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+.coverage.*
+.pytest_cache/
+
+# Build output directories
+dist/
+build/
+out/
+output/
+cmake-build-*/
+DerivedData/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Coverage / test artifacts
+.coverage
+htmlcov/
+.tox/
+
+# Java / JVM
+.gradle/
+.mvn/
+out/
+
+# Go
+vendor/
+
+# Cache
+.cache/
