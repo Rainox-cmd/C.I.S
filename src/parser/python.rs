@@ -4,7 +4,7 @@ use std::path::Path;
 pub struct PythonParser;
 
 fn trim_suffix_chars(s: &str) -> &str {
-    s.trim_end_matches(|c| c == '(' || c == ':')
+    s.trim_end_matches(&['(', ':'][..])
 }
 
 impl LanguageParser for PythonParser {

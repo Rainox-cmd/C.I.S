@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use std::collections::HashMap;
 
 use crate::{config::Config, project::Project, scanner::FileRecord};
+
+pub type SymbolBatch = Vec<(String, String, u32, u32)>;
 
 pub struct Index {
     conn: Connection,
@@ -195,7 +197,7 @@ impl Index {
         )?;
         tx.execute("DELETE FROM files_fts WHERE rel_path = ?1 AND name != ''", rusqlite::params![rel_path])?;
 
-        for (name, kind, line, column) in symbols {
+        for (name, kind, line, column) in symbols.iter() {
             tx.execute(
                 "INSERT INTO symbols (file_id, name, symbol_type, line, column)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -215,7 +217,7 @@ impl Index {
 
     pub fn upsert_symbols_for_files(
         &self,
-        files: &[(&str, &[(String, String, u32, u32)])],
+        files: &[(&str, &SymbolBatch)],
     ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
 
@@ -233,7 +235,7 @@ impl Index {
                 tx.execute("DELETE FROM symbols WHERE file_id = ?1", rusqlite::params![file_id])?;
                 tx.execute("DELETE FROM files_fts WHERE rel_path = ?1 AND name != ''", rusqlite::params![rel_path])?;
 
-                for (name, kind, line, column) in *symbols {
+                for (name, kind, line, column) in symbols.iter() {
                     tx.execute(
                         "INSERT INTO symbols (file_id, name, symbol_type, line, column)
                          VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -299,18 +301,16 @@ impl Index {
 
     pub fn search(&self, query: &str) -> Result<Vec<SearchResult>> {
         let escaped = query.replace("'", "''");
-        let sql = format!(
-            "SELECT rel_path, name, content, rank
+        let sql = "SELECT rel_path, name, content, rank
              FROM files_fts
              WHERE files_fts MATCH ?1
-             ORDER BY rank",
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
+             ORDER BY rank";
+        let mut stmt = self.conn.prepare(sql)?;
 
         let rows = stmt.query_map([escaped.as_str()], |row| {
             let rel_path: String = row.get(0)?;
             let name: String = row.get(1)?;
-            let content: String = row.get(2)?;
+            let _content: String = row.get(2)?;
             let rank: f64 = row.get(3)?;
 
             let symbol_type = if !name.is_empty() && name != rel_path {
@@ -493,7 +493,8 @@ impl Index {
             CREATE INDEX IF NOT EXISTS idx_dependencies_target ON dependencies(target_file_id);
             CREATE INDEX IF NOT EXISTS idx_session_memory_session ON session_memory(session_id);
 
-            CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
+            DROP TABLE IF EXISTS files_fts;
+            CREATE VIRTUAL TABLE files_fts USING fts5(
                 rel_path, name, content
             );
             ",

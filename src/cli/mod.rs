@@ -28,6 +28,10 @@ pub enum Commands {
     },
     /// Parse a source file and extract symbols
     Parse { path: String },
+    /// Search indexed files and symbols using FTS5 full-text search
+    Search { query: String },
+    /// Find symbol definitions by name
+    Symbol { name: String },
     /// Show or modify configuration
     Config {
         #[command(subcommand)]
@@ -146,6 +150,44 @@ impl Cli {
                         println!("  Errors: {}", result.scan_errors.len());
                     }
                     idx.upsert_files(&result.files)?;
+
+                    let supported = [
+                        "Python", "JavaScript", "TypeScript", "Rust", "Go",
+                    ];
+                    for file in &result.files {
+                        if supported.contains(&file.language.as_str()) {
+                            let file_path = project.root.join(&file.rel_path);
+                            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                let parse_result = parser::ParserEngine::parse_file(
+                                    &file_path,
+                                    &content,
+                                    &file.language,
+                                );
+
+                                let symbols: Vec<(String, String, u32, u32)> = parse_result
+                                    .symbols
+                                    .iter()
+                                    .map(|s| (s.name.clone(), format!("{:?}", s.kind), s.line, s.column))
+                                    .collect();
+
+                                if let Err(e) = idx.upsert_symbols(&file.rel_path, &symbols) {
+                                    tracing::warn!("Failed to index symbols for {}: {}", file.rel_path, e);
+                                }
+
+                                let target_paths: Vec<String> = parse_result
+                                    .imports
+                                    .iter()
+                                    .map(|i| i.path.clone())
+                                    .collect();
+                                if !target_paths.is_empty() {
+                                    if let Err(e) = idx.upsert_dependencies(&file.rel_path, &target_paths) {
+                                        tracing::warn!("Failed to index deps for {}: {}", file.rel_path, e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     idx.delete_files(&result.files_deleted)?;
                 } else {
                     let scanner = scanner::Scanner::new(
@@ -178,10 +220,47 @@ impl Cli {
                         }
                     }
                     idx.upsert_files(&result.files)?;
+
+                    let supported = [
+                        "Python", "JavaScript", "TypeScript", "Rust", "Go",
+                    ];
+                    for file in &result.files {
+                        if supported.contains(&file.language.as_str()) {
+                            let file_path = project.root.join(&file.rel_path);
+                            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                let parse_result = parser::ParserEngine::parse_file(
+                                    &file_path,
+                                    &content,
+                                    &file.language,
+                                );
+
+                                let symbols: Vec<(String, String, u32, u32)> = parse_result
+                                    .symbols
+                                    .iter()
+                                    .map(|s| (s.name.clone(), format!("{:?}", s.kind), s.line, s.column))
+                                    .collect();
+
+                                if let Err(e) = idx.upsert_symbols(&file.rel_path, &symbols) {
+                                    tracing::warn!("Failed to index symbols for {}: {}", file.rel_path, e);
+                                }
+
+                                let target_paths: Vec<String> = parse_result
+                                    .imports
+                                    .iter()
+                                    .map(|i| i.path.clone())
+                                    .collect();
+                                if !target_paths.is_empty() {
+                                    if let Err(e) = idx.upsert_dependencies(&file.rel_path, &target_paths) {
+                                        tracing::warn!("Failed to index deps for {}: {}", file.rel_path, e);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Ok(())
-            }
-            Commands::Parse { path } => {
+             }
+             Commands::Parse { path } => {
                 let content = std::fs::read_to_string(&path)
                     .with_context(|| format!("Failed to read {}", path))?;
 
@@ -221,9 +300,49 @@ impl Cli {
                     };
                     println!("  {} ({})", imp.path, rel);
                 }
-                Ok(())
-            }
-            Commands::Config { action } => {
+                 Ok(())
+             }
+             Commands::Search { query } => {
+                 let project = project::Project::discover()?;
+                 let cfg = config::Config::load(&project)?;
+                 let idx = index::Index::open(&project, &cfg)?;
+
+                 let results = idx.search(&query)?;
+                 if results.is_empty() {
+                     println!("No results found for '{}'", query);
+                 } else {
+                     println!("Search results for '{}':", query);
+                     for r in &results {
+                         println!(
+                             "  {} ({}) - {}:{} (rank: {:.2})",
+                             r.name, r.symbol_type, r.rel_path, r.line, r.rank
+                         );
+                     }
+                     println!("\n{} result(s)", results.len());
+                 }
+                 Ok(())
+             }
+             Commands::Symbol { name } => {
+                 let project = project::Project::discover()?;
+                 let cfg = config::Config::load(&project)?;
+                 let idx = index::Index::open(&project, &cfg)?;
+
+                 let symbols = idx.find_symbols_by_name(&name)?;
+                 if symbols.is_empty() {
+                     println!("No symbols found matching '{}'", name);
+                 } else {
+                     println!("Symbol definitions for '{}':", name);
+                     for s in &symbols {
+                         println!(
+                             "  {} {}:{} ({} - {})",
+                             s.symbol_type, s.rel_path, s.line, s.name, s.symbol_type
+                         );
+                     }
+                     println!("\n{} result(s)", symbols.len());
+                 }
+                 Ok(())
+             }
+             Commands::Config { action } => {
                 let project = project::Project::discover()?;
                 let mut cfg = config::Config::load(&project)?;
                 match action {

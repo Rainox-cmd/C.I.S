@@ -132,21 +132,18 @@ impl LanguageParser for JavaScriptParser {
 
             if let Some(cap) = re_export_name.captures(trimmed) {
                 if let Some(name) = cap.get(1) {
-                    let line_str = trimmed;
-                    if line_str.starts_with("export ") {
-                        if let Some(_) = line_str.strip_prefix("export ") {
-                            result.exports.push(crate::parser::Export {
-                                name: name.as_str().to_string(),
-                                kind: if line_str.contains("function") {
-                                    SymbolKind::Function
-                                } else if line_str.contains("class") {
-                                    SymbolKind::Class
-                                } else {
-                                    SymbolKind::Variable
-                                },
-                                line: line_no as u32,
-                            });
-                        }
+                    if trimmed.starts_with("export ") {
+                        result.exports.push(crate::parser::Export {
+                            name: name.as_str().to_string(),
+                            kind: if trimmed.contains("function") {
+                                SymbolKind::Function
+                            } else if trimmed.contains("class") {
+                                SymbolKind::Class
+                            } else {
+                                SymbolKind::Variable
+                            },
+                            line: line_no as u32,
+                        });
                     }
                 }
             }
