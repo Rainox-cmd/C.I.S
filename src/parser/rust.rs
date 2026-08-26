@@ -18,107 +18,74 @@ impl LanguageParser for RustParser {
             language: self.language().to_string(),
         };
 
-        // Extract functions
-        for cap in regex::Regex::new(r"fn\s+(\w+)\s*[<(]")
-            .unwrap()
-            .find_iter(content)
-        {
-            let name = cap
-                .as_str()
-                .split_whitespace()
-                .nth(1)
-                .unwrap()
-                .trim_end_matches(['<', '('])
-                .to_string();
-            result.symbols.push(Symbol {
-                name,
-                kind: SymbolKind::Function,
-                line: 0,
-                column: 0,
-            });
-        }
+        let re_function = regex::Regex::new(r"fn\s+(\w+)\s*[<(]").unwrap();
+        let re_struct = regex::Regex::new(r"struct\s+(\w+)\s*[;{<]").unwrap();
+        let re_enum = regex::Regex::new(r"enum\s+(\w+)\s*\{").unwrap();
+        let re_trait = regex::Regex::new(r"trait\s+(\w+)\s*[{<]").unwrap();
+        let re_use = regex::Regex::new(r"use\s+(.+?);").unwrap();
 
-        // Extract structs
-        for cap in regex::Regex::new(r"struct\s+(\w+)\s*[;{<]")
-            .unwrap()
-            .find_iter(content)
-        {
-            let name = cap
-                .as_str()
-                .split_whitespace()
-                .nth(1)
-                .unwrap()
-                .trim_end_matches([';', '{', '<'])
-                .to_string();
-            result.symbols.push(Symbol {
-                name,
-                kind: SymbolKind::Struct,
-                line: 0,
-                column: 0,
-            });
-        }
+        for (line_num, line) in content.lines().enumerate() {
+            let line_no = line_num + 1;
+            let trimmed = line.trim_start();
 
-        // Extract enums
-        for cap in regex::Regex::new(r"enum\s+(\w+)\s*\{")
-            .unwrap()
-            .find_iter(content)
-        {
-            let name = cap
-                .as_str()
-                .split_whitespace()
-                .nth(1)
-                .unwrap()
-                .trim_end_matches('{')
-                .to_string();
-            result.symbols.push(Symbol {
-                name,
-                kind: SymbolKind::Enum,
-                line: 0,
-                column: 0,
-            });
-        }
+            if let Some(cap) = re_function.captures(trimmed) {
+                if let Some(name) = cap.get(1) {
+                    result.symbols.push(Symbol {
+                        name: name.as_str().to_string(),
+                        kind: SymbolKind::Function,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
 
-        // Extract traits
-        for cap in regex::Regex::new(r"trait\s+(\w+)\s*[{<]")
-            .unwrap()
-            .find_iter(content)
-        {
-            let name = cap
-                .as_str()
-                .split_whitespace()
-                .nth(1)
-                .unwrap()
-                .trim_end_matches(['{', '<'])
-                .to_string();
-            result.symbols.push(Symbol {
-                name,
-                kind: SymbolKind::Trait,
-                line: 0,
-                column: 0,
-            });
-        }
+            if let Some(cap) = re_struct.captures(trimmed) {
+                if let Some(name) = cap.get(1) {
+                    result.symbols.push(Symbol {
+                        name: name.as_str().to_string(),
+                        kind: SymbolKind::Struct,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
 
-        // Extract imports (use statements)
-        for cap in regex::Regex::new(r"use\s+(.+?);")
-            .unwrap()
-            .find_iter(content)
-        {
-            let path = cap
-                .as_str()
-                .split_whitespace()
-                .nth(1)
-                .unwrap()
-                .trim_end_matches(';')
-                .to_string();
-            let is_rel = path.starts_with("crate::")
-                || path.starts_with("super::")
-                || path.starts_with("self::");
-            result.imports.push(Import {
-                path,
-                is_relative: is_rel,
-                line: 0,
-                column: 0,
-            });
+            if let Some(cap) = re_enum.captures(trimmed) {
+                if let Some(name) = cap.get(1) {
+                    result.symbols.push(Symbol {
+                        name: name.as_str().to_string(),
+                        kind: SymbolKind::Enum,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
+
+            if let Some(cap) = re_trait.captures(trimmed) {
+                if let Some(name) = cap.get(1) {
+                    result.symbols.push(Symbol {
+                        name: name.as_str().to_string(),
+                        kind: SymbolKind::Trait,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
+
+            if let Some(cap) = re_use.captures(trimmed) {
+                if let Some(path_match) = cap.get(1) {
+                    let path = path_match.as_str().trim_end_matches(';').to_string();
+                    let is_rel = path.starts_with("crate::")
+                        || path.starts_with("super::")
+                        || path.starts_with("self::");
+                    result.imports.push(Import {
+                        path,
+                        is_relative: is_rel,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
         }
 
         result

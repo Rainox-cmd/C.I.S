@@ -3,6 +3,10 @@ use std::path::Path;
 
 pub struct PythonParser;
 
+fn trim_suffix_chars(s: &str) -> &str {
+    s.trim_end_matches(|c| c == '(' || c == ':')
+}
+
 impl LanguageParser for PythonParser {
     fn language(&self) -> &str {
         "Python"
@@ -22,26 +26,27 @@ impl LanguageParser for PythonParser {
         let mut class_indent = 0;
 
         for (line_num, line) in content.lines().enumerate() {
+            let line_no = line_num + 1;
             let trimmed = line.trim_start();
             let indent = line.len() - trimmed.len();
 
-            // Track class context
-            if trimmed.starts_with("class ") {
+            if let Some(rest) = trimmed.strip_prefix("class ") {
                 in_class = true;
                 class_indent = indent;
-                if let Some(name) = trimmed[6..].split_whitespace().next() {
-                    let name = name.trim_end_matches(['(', ':']).to_string();
+                let name = trim_suffix_chars(
+                    rest.split_whitespace().next().unwrap_or(""),
+                );
+                if !name.is_empty() {
                     result.symbols.push(Symbol {
-                        name,
+                        name: name.to_string(),
                         kind: SymbolKind::Class,
-                        line: line_num as u32 + 1,
-                        column: 0,
+                        line: line_no as u32,
+                        column: indent as u32,
                     });
                 }
                 continue;
             }
 
-            // Exit class context when we see a line with same or less indentation
             if in_class
                 && indent <= class_indent
                 && !trimmed.is_empty()
@@ -52,54 +57,45 @@ impl LanguageParser for PythonParser {
                 in_class = false;
             }
 
-            // Extract methods
-            if trimmed.starts_with("def ") {
-                let rest = &trimmed[4..];
-                if let Some(name) = rest.split('(').next() {
-                    let name = name.trim().to_string();
-                    if in_class {
-                        result.symbols.push(Symbol {
-                            name,
-                            kind: SymbolKind::Method,
-                            line: line_num as u32 + 1,
-                            column: 0,
-                        });
+            if let Some(rest) = trimmed.strip_prefix("def ") {
+                let name = rest.split('(').next().unwrap_or("").trim().to_string();
+                if !name.is_empty() {
+                    let kind = if in_class {
+                        SymbolKind::Method
                     } else {
-                        result.symbols.push(Symbol {
-                            name,
-                            kind: SymbolKind::Function,
-                            line: line_num as u32 + 1,
-                            column: 0,
-                        });
-                    }
+                        SymbolKind::Function
+                    };
+                    result.symbols.push(Symbol {
+                        name,
+                        kind,
+                        line: line_no as u32,
+                        column: indent as u32,
+                    });
                 }
             }
 
-            // Extract imports
-            if trimmed.starts_with("import ") {
-                let name = trimmed[7..]
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
-                result.imports.push(Import {
-                    path: name,
-                    is_relative: false,
-                    line: line_num as u32 + 1,
-                    column: 0,
-                });
+            if let Some(rest) = trimmed.strip_prefix("import ") {
+                let module = rest.split_whitespace().next().unwrap_or("").to_string();
+                if !module.is_empty() {
+                    result.imports.push(Import {
+                        path: module,
+                        is_relative: false,
+                        line: line_no as u32,
+                        column: indent as u32,
+                    });
+                }
             }
 
-            if trimmed.starts_with("from ") {
-                let parts: Vec<&str> = trimmed[5..].split_whitespace().collect();
+            if let Some(rest) = trimmed.strip_prefix("from ") {
+                let parts: Vec<&str> = rest.split_whitespace().collect();
                 if parts.len() >= 3 && parts[1] == "import" {
                     let module = parts[0].to_string();
                     let is_rel = module.starts_with('.');
                     result.imports.push(Import {
                         path: module,
                         is_relative: is_rel,
-                        line: line_num as u32 + 1,
-                        column: 0,
+                        line: line_no as u32,
+                        column: indent as u32,
                     });
                 }
             }

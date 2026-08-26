@@ -18,148 +18,138 @@ impl LanguageParser for JavaScriptParser {
             language: self.language().to_string(),
         };
 
-        // Extract functions
-        for cap in regex::Regex::new(r"function\s+(\w+)\s*\(")
-            .unwrap()
-            .find_iter(content)
-        {
-            let name = cap
-                .as_str()
-                .split_whitespace()
-                .nth(1)
-                .unwrap()
-                .trim_end_matches('(')
-                .to_string();
-            result.symbols.push(Symbol {
-                name,
-                kind: SymbolKind::Function,
-                line: 0,
-                column: 0,
-            });
-        }
+        let re_function = regex::Regex::new(r"function\s+(\w+)\s*\(").unwrap();
+        let re_class = regex::Regex::new(r"class\s+(\w+)\s*[{(]").unwrap();
+        let re_arrow =
+            regex::Regex::new(r"(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[^=])\s*=>")
+                .unwrap();
+        let re_es6_import =
+            regex::Regex::new(r#"import\s+.*?from\s+['"]([^'"]+)['"]"#).unwrap();
+        let re_require =
+            regex::Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap();
+        let re_dynamic_import =
+            regex::Regex::new(r#"import\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap();
+        let re_export_name =
+            regex::Regex::new(r"(?:export\s+)?(?:function|const|let|var|class)\s+(\w+)").unwrap();
 
-        // Extract arrow functions and const/let/var assignments
-        for cap in regex::Regex::new(
-            r"(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[^=])\s*=>",
-        )
-        .unwrap()
-        .find_iter(content)
-        {
-            let name = cap
-                .as_str()
-                .split_whitespace()
-                .nth(1)
-                .unwrap()
-                .trim_end_matches('=')
-                .trim()
-                .to_string();
-            result.symbols.push(Symbol {
-                name,
-                kind: SymbolKind::Function,
-                line: 0,
-                column: 0,
-            });
-        }
+        let mut in_class = false;
+        let mut class_indent = 0;
 
-        // Extract classes
-        for cap in regex::Regex::new(r"class\s+(\w+)\s*[{(]")
-            .unwrap()
-            .find_iter(content)
-        {
-            let name = cap
-                .as_str()
-                .split_whitespace()
-                .nth(1)
-                .unwrap()
-                .trim_end_matches(['{', '('])
-                .to_string();
-            result.symbols.push(Symbol {
-                name,
-                kind: SymbolKind::Class,
-                line: 0,
-                column: 0,
-            });
-        }
+        for (line_num, line) in content.lines().enumerate() {
+            let line_no = line_num + 1;
+            let trimmed = line.trim_start();
+            let indent = line.len() - trimmed.len();
 
-        // Extract methods inside classes
-        for cap in regex::Regex::new(r"class\s+(\w+)[\s\S]*?(?:async\s+)?(\w+)\s*\([^)]*\)\s*\{")
-            .unwrap()
-            .find_iter(content)
-        {
-            let method_name = cap
-                .as_str()
-                .split_whitespace()
-                .last()
-                .unwrap()
-                .trim_end_matches('(')
-                .to_string();
-            result.symbols.push(Symbol {
-                name: method_name,
-                kind: SymbolKind::Method,
-                line: 0,
-                column: 0,
-            });
-        }
+            if in_class
+                && !trimmed.is_empty()
+                && !trimmed.starts_with("class ")
+                && !trimmed.starts_with("//")
+                && !trimmed.starts_with("/*")
+                && !trimmed.starts_with("*")
+                && indent <= class_indent
+            {
+                in_class = false;
+            }
 
-        // Extract imports
-        for cap in regex::Regex::new(r#"import\s+.*?from\s+['"]([^'"]+)['"]"#)
-            .unwrap()
-            .find_iter(content)
-        {
-            let path = cap
-                .as_str()
-                .split('\'')
-                .nth(1)
-                .or_else(|| cap.as_str().split('"').nth(1))
-                .unwrap_or("")
-                .to_string();
-            let is_rel = path.starts_with('.') || path.starts_with('/');
-            result.imports.push(Import {
-                path,
-                is_relative: is_rel,
-                line: 0,
-                column: 0,
-            });
-        }
+            if let Some(cap) = re_class.captures(trimmed) {
+                if let Some(name) = cap.get(1) {
+                    in_class = true;
+                    class_indent = indent;
+                    result.symbols.push(Symbol {
+                        name: name.as_str().to_string(),
+                        kind: SymbolKind::Class,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
 
-        for cap in regex::Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#)
-            .unwrap()
-            .find_iter(content)
-        {
-            let path = cap
-                .as_str()
-                .split('\'')
-                .nth(1)
-                .or_else(|| cap.as_str().split('"').nth(1))
-                .unwrap_or("")
-                .to_string();
-            let is_rel = path.starts_with('.') || path.starts_with('/');
-            result.imports.push(Import {
-                path,
-                is_relative: is_rel,
-                line: 0,
-                column: 0,
-            });
-        }
+            if let Some(cap) = re_function.captures(trimmed) {
+                if let Some(name) = cap.get(1) {
+                    let kind = if in_class {
+                        SymbolKind::Method
+                    } else {
+                        SymbolKind::Function
+                    };
+                    result.symbols.push(Symbol {
+                        name: name.as_str().to_string(),
+                        kind,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
 
-        for cap in regex::Regex::new(r#"import\s*\(\s*['"]([^'"]+)['"]\s*\)"#)
-            .unwrap()
-            .find_iter(content)
-        {
-            let path = cap
-                .as_str()
-                .split('\'')
-                .nth(1)
-                .or_else(|| cap.as_str().split('"').nth(1))
-                .unwrap_or("")
-                .to_string();
-            let is_rel = path.starts_with('.') || path.starts_with('/');
-            result.imports.push(Import {
-                path,
-                is_relative: is_rel,
-                line: 0,
-                column: 0,
-            });
+            if let Some(cap) = re_arrow.captures(trimmed) {
+                if let Some(name) = cap.get(1) {
+                    result.symbols.push(Symbol {
+                        name: name.as_str().to_string(),
+                        kind: SymbolKind::Function,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
+
+            if let Some(cap) = re_es6_import.captures(line) {
+                if let Some(path_match) = cap.get(1) {
+                    let path = path_match.as_str().to_string();
+                    let is_rel = path.starts_with('.') || path.starts_with('/');
+                    result.imports.push(Import {
+                        path,
+                        is_relative: is_rel,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
+
+            if let Some(cap) = re_require.captures(line) {
+                if let Some(path_match) = cap.get(1) {
+                    let path = path_match.as_str().to_string();
+                    let is_rel = path.starts_with('.') || path.starts_with('/');
+                    result.imports.push(Import {
+                        path,
+                        is_relative: is_rel,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
+
+            if let Some(cap) = re_dynamic_import.captures(line) {
+                if let Some(path_match) = cap.get(1) {
+                    let path = path_match.as_str().to_string();
+                    let is_rel = path.starts_with('.') || path.starts_with('/');
+                    result.imports.push(Import {
+                        path,
+                        is_relative: is_rel,
+                        line: line_no as u32,
+                        column: cap.get(0).unwrap().start() as u32,
+                    });
+                }
+            }
+
+            if let Some(cap) = re_export_name.captures(trimmed) {
+                if let Some(name) = cap.get(1) {
+                    let line_str = trimmed;
+                    if line_str.starts_with("export ") {
+                        if let Some(_) = line_str.strip_prefix("export ") {
+                            result.exports.push(crate::parser::Export {
+                                name: name.as_str().to_string(),
+                                kind: if line_str.contains("function") {
+                                    SymbolKind::Function
+                                } else if line_str.contains("class") {
+                                    SymbolKind::Class
+                                } else {
+                                    SymbolKind::Variable
+                                },
+                                line: line_no as u32,
+                            });
+                        }
+                    }
+                }
+            }
         }
 
         result
