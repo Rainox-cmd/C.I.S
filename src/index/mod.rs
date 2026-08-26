@@ -31,6 +31,21 @@ pub struct Dependency {
     pub target_file: String,
 }
 
+pub struct Edge {
+    pub source_file: String,
+    pub target_file: String,
+    pub source_symbol: Option<String>,
+    pub target_symbol: Option<String>,
+    pub dep_type: String,
+    pub line: i64,
+}
+
+pub struct EntryPoint {
+    pub rel_path: String,
+    pub symbol_count: i64,
+    pub incoming_count: i64,
+}
+
 impl Index {
     pub fn open(project: &Project, _config: &Config) -> Result<Self> {
         let conn = Connection::open(project.db_path()).with_context(|| {
@@ -174,6 +189,10 @@ impl Index {
                 tx.execute("DELETE FROM symbols WHERE file_id = ?1", rusqlite::params![file_id])?;
                 tx.execute(
                     "DELETE FROM dependencies WHERE source_file_id = ?1 OR target_file_id = ?1",
+                    rusqlite::params![file_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM edges WHERE source_file_id = ?1 OR target_file_id = ?1",
                     rusqlite::params![file_id],
                 )?;
                 tx.execute("DELETE FROM files_fts WHERE rel_path = ?1", rusqlite::params![rel_path])?;
@@ -467,6 +486,167 @@ impl Index {
             .context("Failed to retrieve dependencies")
     }
 
+    pub fn upsert_symbol_edges(&self, source_rel_path: &str, edges: &[(String, String, String, u32)]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+
+        let source_id: i64 = tx
+            .query_row(
+                "SELECT id FROM files WHERE rel_path = ?1",
+                rusqlite::params![source_rel_path],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(-1);
+
+        if source_id > 0 {
+            tx.execute(
+                "DELETE FROM edges WHERE source_file_id = ?1",
+                rusqlite::params![source_id],
+            )?;
+
+            for (target_symbol, target_file, dep_type, line) in edges.iter() {
+                let target_id: i64 = tx
+                    .query_row(
+                        "SELECT id FROM files WHERE rel_path = ?1",
+                        rusqlite::params![target_file],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .unwrap_or(-1);
+
+                if target_id > 0 {
+                    tx.execute(
+                        "INSERT INTO edges (source_file_id, target_file_id, source_symbol, target_symbol, dep_type, line)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        rusqlite::params![source_id, target_id, target_symbol, target_symbol, dep_type, *line as i64],
+                    )?;
+                }
+            }
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn get_forward_edges(&self, rel_path: &str) -> Result<Vec<Edge>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT sf.rel_path, tf.rel_path, e.source_symbol, e.target_symbol, e.dep_type, e.line
+             FROM edges e
+             JOIN files sf ON e.source_file_id = sf.id
+             JOIN files tf ON e.target_file_id = tf.id
+             WHERE sf.rel_path = ?1",
+        )?;
+        let rows = stmt.query_map([rel_path], |row| {
+            Ok(Edge {
+                source_file: row.get(0)?,
+                target_file: row.get(1)?,
+                source_symbol: row.get(2)?,
+                target_symbol: row.get(3)?,
+                dep_type: row.get(4)?,
+                line: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().context("Failed to retrieve forward edges")
+    }
+
+    pub fn get_reverse_edges(&self, rel_path: &str) -> Result<Vec<Edge>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT sf.rel_path, tf.rel_path, e.source_symbol, e.target_symbol, e.dep_type, e.line
+             FROM edges e
+             JOIN files sf ON e.source_file_id = sf.id
+             JOIN files tf ON e.target_file_id = tf.id
+             WHERE tf.rel_path = ?1",
+        )?;
+        let rows = stmt.query_map([rel_path], |row| {
+            Ok(Edge {
+                source_file: row.get(0)?,
+                target_file: row.get(1)?,
+                source_symbol: row.get(2)?,
+                target_symbol: row.get(3)?,
+                dep_type: row.get(4)?,
+                line: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().context("Failed to retrieve reverse edges")
+    }
+
+    pub fn get_transitive_dependencies(&self, rel_path: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE deps(target_file_id) AS (
+                 SELECT e.target_file_id FROM edges e
+                 JOIN files sf ON e.source_file_id = sf.id
+                 WHERE sf.rel_path = ?1
+                 UNION
+                 SELECT e.target_file_id FROM edges e
+                 JOIN deps d ON e.source_file_id = d.target_file_id
+             )
+             SELECT DISTINCT f.rel_path FROM deps d
+             JOIN files f ON d.target_file_id = f.id
+             WHERE f.rel_path != ?1",
+        )?;
+        let rows = stmt.query_map([rel_path], |row| {
+            let path: String = row.get(0)?;
+            Ok(path)
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().context("Failed to retrieve transitive dependencies")
+    }
+
+    pub fn get_reverse_dependencies(&self, rel_path: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE revdeps(source_file_id) AS (
+                 SELECT e.source_file_id FROM edges e
+                 JOIN files tf ON e.target_file_id = tf.id
+                 WHERE tf.rel_path = ?1
+                 UNION
+                 SELECT e.source_file_id FROM edges e
+                 JOIN revdeps r ON e.target_file_id = r.source_file_id
+             )
+             SELECT DISTINCT f.rel_path FROM revdeps r
+             JOIN files f ON r.source_file_id = f.id
+             WHERE f.rel_path != ?1",
+        )?;
+        let rows = stmt.query_map([rel_path], |row| {
+            let path: String = row.get(0)?;
+            Ok(path)
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().context("Failed to retrieve reverse dependencies")
+    }
+
+    pub fn get_entry_points(&self) -> Result<Vec<EntryPoint>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.rel_path,
+             (SELECT COUNT(*) FROM symbols WHERE file_id = f.id) as symbol_count,
+             (SELECT COUNT(*) FROM edges e JOIN files tf ON e.target_file_id = tf.id WHERE tf.rel_path = f.rel_path) as incoming
+             FROM files f
+             WHERE f.category = 'source'
+             ORDER BY f.rel_path",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(EntryPoint {
+                rel_path: row.get(0)?,
+                symbol_count: row.get(1)?,
+                incoming_count: row.get(2)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().context("Failed to retrieve entry points")
+    }
+
+    pub fn has_cycle(&self) -> Result<bool> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE reach(start, current, depth) AS (
+                 SELECT e.source_file_id, e.target_file_id, 1 FROM edges e
+                 UNION ALL
+                 SELECT r.start, e.target_file_id, r.depth + 1
+                 FROM reach r
+                 JOIN edges e ON r.current = e.source_file_id
+                 WHERE r.depth < 100
+             )
+             SELECT COUNT(*) FROM reach WHERE start = current AND depth > 1",
+        )?;
+        let count: i64 = stmt.query_row([], |row| row.get(0))?;
+        Ok(count > 0)
+    }
+
     fn ensure_schema(&self) -> Result<()> {
         self.conn
             .execute_batch(
@@ -528,9 +708,25 @@ impl Index {
             CREATE INDEX IF NOT EXISTS idx_files_rel_path ON files(rel_path);
             CREATE INDEX IF NOT EXISTS idx_symbols_file_id ON symbols(file_id);
             CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
-            CREATE INDEX IF NOT EXISTS idx_dependencies_source ON dependencies(source_file_id);
-            CREATE INDEX IF NOT EXISTS idx_dependencies_target ON dependencies(target_file_id);
-            CREATE INDEX IF NOT EXISTS idx_session_memory_session ON session_memory(session_id);
+             CREATE INDEX IF NOT EXISTS idx_dependencies_source ON dependencies(source_file_id);
+             CREATE INDEX IF NOT EXISTS idx_dependencies_target ON dependencies(target_file_id);
+             CREATE INDEX IF NOT EXISTS idx_session_memory_session ON session_memory(session_id);
+
+            CREATE TABLE IF NOT EXISTS edges (
+                id INTEGER PRIMARY KEY,
+                source_file_id INTEGER NOT NULL,
+                target_file_id INTEGER NOT NULL,
+                source_symbol TEXT,
+                target_symbol TEXT,
+                dep_type TEXT,
+                line INTEGER,
+                FOREIGN KEY (source_file_id) REFERENCES files(id),
+                FOREIGN KEY (target_file_id) REFERENCES files(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_file_id);
+            CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_file_id);
+            CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(dep_type);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
                 rel_path, name, content
@@ -573,9 +769,38 @@ impl Index {
             )?;
         }
 
+        let has_edges: bool = self.conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='edges'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0) == 1;
+        if !has_edges {
+            self.conn.execute_batch(
+                "CREATE TABLE edges (
+                    id INTEGER PRIMARY KEY,
+                    source_file_id INTEGER NOT NULL,
+                    target_file_id INTEGER NOT NULL,
+                    source_symbol TEXT,
+                    target_symbol TEXT,
+                    dep_type TEXT,
+                    line INTEGER,
+                    FOREIGN KEY (source_file_id) REFERENCES files(id),
+                    FOREIGN KEY (target_file_id) REFERENCES files(id)
+                );
+                 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_file_id);
+                 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_file_id);
+                 CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(dep_type);",
+            )?;
+        }
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod graph_tests;

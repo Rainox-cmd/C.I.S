@@ -32,6 +32,23 @@ pub enum Commands {
     Search { query: String },
     /// Find symbol definitions by name
     Symbol { name: String },
+    /// Show dependency graph for a file
+    Deps {
+        /// File path (relative to project root)
+        path: String,
+        /// Show transitive dependencies instead of direct
+        #[arg(short, long)]
+        transitive: bool,
+    },
+    /// Show files affected by changes to a file (impact analysis)
+    Impact {
+        /// File path (relative to project root)
+        path: String,
+    },
+    /// Show project entry points
+    EntryPoints,
+    /// Check for circular dependencies
+    Cycles,
     /// Show or modify configuration
     Config {
         #[command(subcommand)]
@@ -184,6 +201,29 @@ impl Cli {
                                         tracing::warn!("Failed to index deps for {}: {}", file.rel_path, e);
                                     }
                                 }
+
+                                let edges: Vec<(String, String, String, u32)> = parse_result
+                                    .imports
+                                    .iter()
+                                    .filter_map(|imp| {
+                                        let target_file = resolve_import_to_file(&imp.path, &file.rel_path, &file.language);
+                                        if target_file.is_empty() {
+                                            None
+                                        } else {
+                                            Some((
+                                                imp.path.clone(),
+                                                target_file,
+                                                if imp.is_relative { "relative" } else { "import" }.to_string(),
+                                                imp.line,
+                                            ))
+                                        }
+                                    })
+                                    .collect();
+                                if !edges.is_empty() {
+                                    if let Err(e) = idx.upsert_symbol_edges(&file.rel_path, &edges) {
+                                        tracing::warn!("Failed to index edges for {}: {}", file.rel_path, e);
+                                    }
+                                }
                             }
                         }
                     }
@@ -226,41 +266,64 @@ impl Cli {
                     ];
                     for file in &result.files {
                         if supported.contains(&file.language.as_str()) {
-                            let file_path = project.root.join(&file.rel_path);
-                            if let Ok(content) = std::fs::read_to_string(&file_path) {
-                                let parse_result = parser::ParserEngine::parse_file(
-                                    &file_path,
-                                    &content,
-                                    &file.language,
-                                );
+                                let file_path = project.root.join(&file.rel_path);
+                                if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                    let parse_result = parser::ParserEngine::parse_file(
+                                        &file_path,
+                                        &content,
+                                        &file.language,
+                                    );
 
-                                let symbols: Vec<(String, String, u32, u32)> = parse_result
-                                    .symbols
-                                    .iter()
-                                    .map(|s| (s.name.clone(), format!("{:?}", s.kind), s.line, s.column))
-                                    .collect();
+                                    let symbols: Vec<(String, String, u32, u32)> = parse_result
+                                        .symbols
+                                        .iter()
+                                        .map(|s| (s.name.clone(), format!("{:?}", s.kind), s.line, s.column))
+                                        .collect();
 
-                                if let Err(e) = idx.upsert_symbols(&file.rel_path, &symbols) {
-                                    tracing::warn!("Failed to index symbols for {}: {}", file.rel_path, e);
-                                }
+                                    if let Err(e) = idx.upsert_symbols(&file.rel_path, &symbols) {
+                                        tracing::warn!("Failed to index symbols for {}: {}", file.rel_path, e);
+                                    }
 
-                                let target_paths: Vec<String> = parse_result
-                                    .imports
-                                    .iter()
-                                    .map(|i| i.path.clone())
-                                    .collect();
-                                if !target_paths.is_empty() {
-                                    if let Err(e) = idx.upsert_dependencies(&file.rel_path, &target_paths) {
-                                        tracing::warn!("Failed to index deps for {}: {}", file.rel_path, e);
+                                    let target_paths: Vec<String> = parse_result
+                                        .imports
+                                        .iter()
+                                        .map(|i| i.path.clone())
+                                        .collect();
+                                    if !target_paths.is_empty() {
+                                        if let Err(e) = idx.upsert_dependencies(&file.rel_path, &target_paths) {
+                                            tracing::warn!("Failed to index deps for {}: {}", file.rel_path, e);
+                                        }
+                                    }
+
+                                    let edges: Vec<(String, String, String, u32)> = parse_result
+                                        .imports
+                                        .iter()
+                                        .filter_map(|imp| {
+                                            let target_file = resolve_import_to_file(&imp.path, &file.rel_path, &file.language);
+                                            if target_file.is_empty() {
+                                                None
+                                            } else {
+                                                Some((
+                                                    imp.path.clone(),
+                                                    target_file,
+                                                    if imp.is_relative { "relative" } else { "import" }.to_string(),
+                                                    imp.line,
+                                                ))
+                                            }
+                                        })
+                                        .collect();
+                                    if !edges.is_empty() {
+                                        if let Err(e) = idx.upsert_symbol_edges(&file.rel_path, &edges) {
+                                            tracing::warn!("Failed to index edges for {}: {}", file.rel_path, e);
+                                        }
                                     }
                                 }
                             }
-                        }
                     }
                 }
                 Ok(())
-             }
-             Commands::Parse { path } => {
+              }
+              Commands::Parse { path } => {
                 let content = std::fs::read_to_string(&path)
                     .with_context(|| format!("Failed to read {}", path))?;
 
@@ -322,26 +385,108 @@ impl Cli {
                  }
                  Ok(())
              }
-             Commands::Symbol { name } => {
-                 let project = project::Project::discover()?;
-                 let cfg = config::Config::load(&project)?;
-                 let idx = index::Index::open(&project, &cfg)?;
+              Commands::Symbol { name } => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let idx = index::Index::open(&project, &cfg)?;
 
-                 let symbols = idx.find_symbols_by_name(&name)?;
-                 if symbols.is_empty() {
-                     println!("No symbols found matching '{}'", name);
-                 } else {
-                     println!("Symbol definitions for '{}':", name);
-                     for s in &symbols {
-                         println!(
-                             "  {} {}:{} ({} - {})",
-                             s.symbol_type, s.rel_path, s.line, s.name, s.symbol_type
-                         );
-                     }
-                     println!("\n{} result(s)", symbols.len());
-                 }
-                 Ok(())
-             }
+                  let symbols = idx.find_symbols_by_name(&name)?;
+                  if symbols.is_empty() {
+                      println!("No symbols found matching '{}'", name);
+                  } else {
+                      println!("Symbol definitions for '{}':", name);
+                      for s in &symbols {
+                          println!(
+                              "  {} {}:{} ({} - {})",
+                              s.symbol_type, s.rel_path, s.line, s.name, s.symbol_type
+                          );
+                      }
+                      println!("\n{} result(s)", symbols.len());
+                  }
+                  Ok(())
+              }
+              Commands::Deps { path, transitive } => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let idx = index::Index::open(&project, &cfg)?;
+
+                  if transitive {
+                      let deps = idx.get_transitive_dependencies(&path)?;
+                      if deps.is_empty() {
+                          println!("No transitive dependencies found for '{}'", path);
+                      } else {
+                          println!("Transitive dependencies of '{}':", path);
+                          for d in &deps {
+                              println!("  {}", d);
+                          }
+                          println!("\n{} result(s)", deps.len());
+                      }
+                  } else {
+                      let deps = idx.get_dependencies(&path)?;
+                      if deps.is_empty() {
+                          println!("No direct dependencies found for '{}'", path);
+                      } else {
+                          println!("Direct dependencies of '{}':", path);
+                          for d in &deps {
+                              println!("  {}", d.target_file);
+                          }
+                          println!("\n{} result(s)", deps.len());
+                      }
+                  }
+                  Ok(())
+              }
+              Commands::Impact { path } => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let idx = index::Index::open(&project, &cfg)?;
+
+                  let affected = idx.get_reverse_dependencies(&path)?;
+                  if affected.is_empty() {
+                      println!("No files affected by changes to '{}'", path);
+                  } else {
+                      println!("Files affected by changes to '{}':", path);
+                      for a in &affected {
+                          println!("  {}", a);
+                      }
+                      println!("\n{} result(s)", affected.len());
+                  }
+                  Ok(())
+              }
+              Commands::EntryPoints => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let idx = index::Index::open(&project, &cfg)?;
+
+                  let entries = idx.get_entry_points()?;
+                  if entries.is_empty() {
+                      println!("No entry points found");
+                  } else {
+                      println!("Entry points (no incoming dependencies):");
+                      for e in entries.iter().filter(|e| e.incoming_count == 0) {
+                          println!("  {} ({} symbols)", e.rel_path, e.symbol_count);
+                      }
+                      println!();
+                      println!("All source files:");
+                      for e in &entries {
+                          println!("  {} ({} symbols, {} incoming)", e.rel_path, e.symbol_count, e.incoming_count);
+                      }
+                      println!("\n{} total source files", entries.len());
+                  }
+                  Ok(())
+              }
+              Commands::Cycles => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let idx = index::Index::open(&project, &cfg)?;
+
+                  let has_cycle = idx.has_cycle()?;
+                  if has_cycle {
+                      println!("Circular dependencies detected!");
+                  } else {
+                      println!("No circular dependencies found.");
+                  }
+                  Ok(())
+              }
              Commands::Config { action } => {
                 let project = project::Project::discover()?;
                 let mut cfg = config::Config::load(&project)?;
@@ -416,4 +561,49 @@ impl Cli {
             }
         }
     }
+}
+
+fn resolve_import_to_file(imp_path: &str, source_path: &str, language: &str) -> String {
+    if imp_path.is_empty() || imp_path == "." {
+        return String::new();
+    }
+
+    let normalized = imp_path.replace('.', "/");
+
+    let candidates: Vec<String> = match language {
+        "Python" => vec![
+            format!("{}.py", normalized),
+            format!("{}/__init__.py", normalized),
+        ],
+        "Rust" => vec![
+            format!("{}.rs", normalized),
+            format!("{}/mod.rs", normalized),
+            format!("{}/main.rs", normalized),
+            format!("{}/lib.rs", normalized),
+        ],
+        "Go" => vec![
+            format!("{}.go", normalized),
+        ],
+        "JavaScript" | "TypeScript" => vec![
+            format!("{}.js", normalized),
+            format!("{}.jsx", normalized),
+            format!("{}.ts", normalized),
+            format!("{}.tsx", normalized),
+            format!("{}/index.js", normalized),
+            format!("{}/index.ts", normalized),
+        ],
+        _ => vec![format!("{}.{}", normalized, language.to_lowercase())],
+    };
+
+    for candidate in candidates {
+        if std::path::Path::new(&candidate).exists() {
+            return candidate;
+        }
+    }
+
+    if source_path == imp_path {
+        return imp_path.to_string();
+    }
+
+    String::new()
 }

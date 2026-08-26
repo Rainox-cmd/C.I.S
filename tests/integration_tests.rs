@@ -530,3 +530,124 @@ fn test_cis_status_real_project_directory() {
         }
     }
 }
+
+#[test]
+fn test_cis_deps_shows_direct_dependencies() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let project_dir = temp.child("dep_test");
+    project_dir.create_dir_all().unwrap();
+
+    let main_py = project_dir.child("main.py");
+    main_py.write_str("import utils\n\nprint('hello')\n").unwrap();
+    let utils_py = project_dir.child("utils.py");
+    utils_py.write_str("def helper():\n    pass\n").unwrap();
+
+    init_project(&project_dir);
+    let scan_output = run_scan(&project_dir, false);
+    assert!(scan_output.contains("Scan complete"));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cis"))
+        .args(["deps", "main.py"])
+        .current_dir(&project_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    eprintln!("deps output:\n{}", stdout);
+    assert!(output.status.success(), "cis deps failed: {}", stdout);
+}
+
+#[test]
+fn test_cis_impact_shows_affected_files() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let project_dir = temp.child("impact_test");
+    project_dir.create_dir_all().unwrap();
+
+    project_dir.child("main.py").write_str("import utils\n\nprint('hello')\n").unwrap();
+    project_dir.child("utils.py").write_str("import config\n\ndef helper():\n    pass\n").unwrap();
+    project_dir.child("config.py").write_str("DEBUG = True\n").unwrap();
+
+    init_project(&project_dir);
+    run_scan(&project_dir, false);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cis"))
+        .args(["impact", "config.py"])
+        .current_dir(&project_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    eprintln!("impact output:\n{}", stdout);
+    assert!(output.status.success(), "cis impact failed: {}", stdout);
+}
+
+#[test]
+fn test_cis_entry_points() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let project_dir = temp.child("entries_test");
+    project_dir.create_dir_all().unwrap();
+
+    project_dir.child("main.py").write_str("import utils\n").unwrap();
+    project_dir.child("utils.py").write_str("def helper():\n    pass\n").unwrap();
+
+    init_project(&project_dir);
+    run_scan(&project_dir, false);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cis"))
+        .args(["entry-points"])
+        .current_dir(&project_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    eprintln!("entry-points output:\n{}", stdout);
+    assert!(output.status.success(), "cis entry-points failed: {}", stdout);
+    assert!(stdout.contains("Entry points"));
+}
+
+#[test]
+fn test_cis_cycles() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let project_dir = temp.child("cycles_test");
+    project_dir.create_dir_all().unwrap();
+
+    project_dir.child("a.py").write_str("import b\n").unwrap();
+    project_dir.child("b.py").write_str("import a\n").unwrap();
+
+    init_project(&project_dir);
+    run_scan(&project_dir, false);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cis"))
+        .args(["cycles"])
+        .current_dir(&project_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    eprintln!("cycles output:\n{}", stdout);
+    assert!(output.status.success(), "cis cycles failed: {}", stdout);
+}
+
+#[test]
+fn test_cis_deps_transitive() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let project_dir = temp.child("transitive_test");
+    project_dir.create_dir_all().unwrap();
+
+    project_dir.child("a.py").write_str("import b\n").unwrap();
+    project_dir.child("b.py").write_str("import c\n").unwrap();
+    project_dir.child("c.py").write_str("value = 42\n").unwrap();
+
+    init_project(&project_dir);
+    run_scan(&project_dir, false);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_cis"))
+        .args(["deps", "--transitive", "a.py"])
+        .current_dir(&project_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    eprintln!("transitive deps output:\n{}", stdout);
+    assert!(output.status.success(), "cis deps --transitive failed: {}", stdout);
+}
