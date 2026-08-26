@@ -121,8 +121,13 @@ impl Index {
         let tx = self.conn.unchecked_transaction()?;
         for file in files {
             tx.execute(
-                "INSERT OR REPLACE INTO files (rel_path, name, ext, size, language, category, lines, hash, mtime, indexed_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO files (rel_path, name, ext, size, language, category, lines, hash, mtime, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 ON CONFLICT(rel_path) DO UPDATE SET
+                     name = excluded.name, ext = excluded.ext, size = excluded.size,
+                     language = excluded.language, category = excluded.category,
+                     lines = excluded.lines, hash = excluded.hash,
+                     mtime = excluded.mtime, indexed_at = excluded.indexed_at",
                 rusqlite::params![
                     file.rel_path,
                     file.name,
@@ -138,7 +143,11 @@ impl Index {
             )?;
 
             tx.execute(
-                "INSERT OR REPLACE INTO files_fts (rel_path, name, content)
+                "DELETE FROM files_fts WHERE rel_path = ?1",
+                rusqlite::params![&file.rel_path],
+            )?;
+            tx.execute(
+                "INSERT INTO files_fts (rel_path, name, content)
                  VALUES (?1, ?2, ?3)",
                 rusqlite::params![
                     &file.rel_path,
@@ -191,11 +200,24 @@ impl Index {
             )
             .context("File not found in index; cannot store symbols")?;
 
+        let file_name: String = tx
+            .query_row(
+                "SELECT name FROM files WHERE rel_path = ?1",
+                rusqlite::params![rel_path],
+                |row| row.get(0),
+            )?;
+
         tx.execute(
             "DELETE FROM symbols WHERE file_id = ?1",
             rusqlite::params![file_id],
         )?;
-        tx.execute("DELETE FROM files_fts WHERE rel_path = ?1 AND name != ''", rusqlite::params![rel_path])?;
+        tx.execute("DELETE FROM files_fts WHERE rel_path = ?1", rusqlite::params![rel_path])?;
+
+        tx.execute(
+            "INSERT INTO files_fts (rel_path, name, content)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![rel_path, &file_name, format!("{} {}", rel_path, file_name)],
+        )?;
 
         for (name, kind, line, column) in symbols.iter() {
             tx.execute(
@@ -232,8 +254,25 @@ impl Index {
                 .unwrap_or(-1);
 
             if file_id > 0 {
+                let file_name: String = tx
+                    .query_row(
+                        "SELECT name FROM files WHERE rel_path = ?1",
+                        rusqlite::params![rel_path],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .unwrap_or_default();
+
                 tx.execute("DELETE FROM symbols WHERE file_id = ?1", rusqlite::params![file_id])?;
-                tx.execute("DELETE FROM files_fts WHERE rel_path = ?1 AND name != ''", rusqlite::params![rel_path])?;
+                tx.execute("DELETE FROM files_fts WHERE rel_path = ?1", rusqlite::params![rel_path])?;
+
+                if !file_name.is_empty() {
+                    tx.execute(
+                        "INSERT INTO files_fts (rel_path, name, content)
+                         VALUES (?1, ?2, ?3)",
+                        rusqlite::params![rel_path, &file_name, format!("{} {}", rel_path, file_name)],
+                    )?;
+                }
 
                 for (name, kind, line, column) in symbols.iter() {
                     tx.execute(
@@ -493,13 +532,46 @@ impl Index {
             CREATE INDEX IF NOT EXISTS idx_dependencies_target ON dependencies(target_file_id);
             CREATE INDEX IF NOT EXISTS idx_session_memory_session ON session_memory(session_id);
 
-            DROP TABLE IF EXISTS files_fts;
-            CREATE VIRTUAL TABLE files_fts USING fts5(
+            CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
                 rel_path, name, content
             );
             ",
-            )
-            .context("Failed to create database schema")?;
+        )
+        .context("Failed to create database schema")?;
+
+        let needs_rebuild: bool = self.conn.query_row(
+            "SELECT count(*) FROM pragma_table_info('files_fts') WHERE name = 'content'",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0) == 0;
+        if needs_rebuild {
+            self.conn.execute_batch("DROP TABLE IF EXISTS files_fts;")?;
+            self.conn.execute_batch(
+                "CREATE VIRTUAL TABLE files_fts USING fts5(rel_path, name, content);",
+            )?;
+        }
+
+        let has_column: bool = self.conn.query_row(
+            "SELECT count(*) FROM pragma_table_info('symbols') WHERE name = 'column'",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0) == 1;
+        if !has_column {
+            self.conn.execute_batch("ALTER TABLE symbols ADD COLUMN column INTEGER;")?;
+        }
+
+        let has_complexity: bool = self.conn.query_row(
+            "SELECT count(*) FROM pragma_table_info('files') WHERE name = 'complexity_score'",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0) == 1;
+        if !has_complexity {
+            self.conn.execute_batch(
+                "ALTER TABLE files ADD COLUMN complexity_score INTEGER;
+                 ALTER TABLE files ADD COLUMN complexity_level TEXT;
+                 ALTER TABLE files ADD COLUMN risk_level TEXT;",
+            )?;
+        }
 
         Ok(())
     }
