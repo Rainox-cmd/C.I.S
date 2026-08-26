@@ -42,7 +42,13 @@ impl LanguageParser for PythonParser {
             }
 
             // Exit class context when we see a line with same or less indentation
-            if in_class && indent <= class_indent && !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with("def ") && !trimmed.starts_with("    ") {
+            if in_class
+                && indent <= class_indent
+                && !trimmed.is_empty()
+                && !trimmed.starts_with('#')
+                && !trimmed.starts_with("def ")
+                && !trimmed.starts_with("    ")
+            {
                 in_class = false;
             }
 
@@ -71,7 +77,11 @@ impl LanguageParser for PythonParser {
 
             // Extract imports
             if trimmed.starts_with("import ") {
-                let name = trimmed[7..].split_whitespace().next().unwrap_or("").to_string();
+                let name = trimmed[7..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
                 result.imports.push(Import {
                     path: name,
                     is_relative: false,

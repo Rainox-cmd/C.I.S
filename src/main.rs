@@ -7,14 +7,15 @@ mod diagnostics;
 mod index;
 mod parser;
 mod project;
+#[allow(dead_code)]
 mod scanner;
 #[allow(dead_code, unused_imports)]
 mod security;
 #[allow(dead_code, unused_imports)]
 mod terminal;
 
-use clap::Parser;
 use anyhow::Result;
+use clap::Parser;
 use tracing::info;
 
 fn main() -> Result<()> {

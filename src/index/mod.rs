@@ -10,8 +10,9 @@ pub struct Index {
 
 impl Index {
     pub fn open(project: &Project, _config: &Config) -> Result<Self> {
-        let conn = Connection::open(project.db_path())
-            .with_context(|| format!("Failed to open database at {}", project.db_path().display()))?;
+        let conn = Connection::open(project.db_path()).with_context(|| {
+            format!("Failed to open database at {}", project.db_path().display())
+        })?;
 
         if _config.database.wal_mode {
             conn.execute_batch("PRAGMA journal_mode=WAL;")
@@ -119,9 +120,22 @@ impl Index {
         Ok(())
     }
 
+    pub fn delete_files(&self, rel_paths: &[String]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for rel_path in rel_paths {
+            tx.execute(
+                "DELETE FROM files WHERE rel_path = ?1",
+                rusqlite::params![rel_path],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     fn ensure_schema(&self) -> Result<()> {
-        self.conn.execute_batch(
-            "
+        self.conn
+            .execute_batch(
+                "
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY,
                 rel_path TEXT UNIQUE NOT NULL,
@@ -185,8 +199,9 @@ impl Index {
             CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
                 rel_path, name, content=symbols
             );
-            "
-        ).context("Failed to create database schema")?;
+            ",
+            )
+            .context("Failed to create database schema")?;
 
         Ok(())
     }
@@ -204,8 +219,9 @@ mod tests {
         project.init().unwrap();
         let cfg = Config::default();
         let idx = Index::open(&project, &cfg).unwrap();
-        
-        let count: i64 = idx.conn
+
+        let count: i64 = idx
+            .conn
             .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 0);
@@ -218,7 +234,7 @@ mod tests {
         project.init().unwrap();
         let cfg = Config::default();
         let idx = Index::open(&project, &cfg).unwrap();
-        
+
         let result = idx.doctor();
         assert!(result.is_ok());
     }
@@ -230,7 +246,7 @@ mod tests {
         project.init().unwrap();
         let cfg = Config::default();
         let idx = Index::open(&project, &cfg).unwrap();
-        
+
         let result = idx.status();
         assert!(result.is_ok());
     }
@@ -242,23 +258,21 @@ mod tests {
         project.init().unwrap();
         let cfg = Config::default();
         let idx = Index::open(&project, &cfg).unwrap();
-        
-        let files = vec![
-            FileRecord {
-                rel_path: "src/main.rs".to_string(),
-                name: "main.rs".to_string(),
-                ext: ".rs".to_string(),
-                size: 100,
-                language: "Rust".to_string(),
-                category: "source".to_string(),
-                lines: 10,
-                hash: "abc123".to_string(),
-                mtime: 1000.0,
-            }
-        ];
-        
+
+        let files = vec![FileRecord {
+            rel_path: "src/main.rs".to_string(),
+            name: "main.rs".to_string(),
+            ext: ".rs".to_string(),
+            size: 100,
+            language: "Rust".to_string(),
+            category: "source".to_string(),
+            lines: 10,
+            hash: "abc123".to_string(),
+            mtime: 1000.0,
+        }];
+
         idx.upsert_files(&files).unwrap();
-        
+
         let hashes = idx.get_file_hashes().unwrap();
         assert_eq!(hashes.get("src/main.rs"), Some(&"abc123".to_string()));
     }

@@ -32,19 +32,15 @@ impl PathSecurity {
 }
 
 pub fn canonicalize_path(path: &Path) -> Result<PathBuf, PathContainmentError> {
-    let canonical = std::fs::canonicalize(path).map_err(|e| {
-        PathContainmentError::Canonicalization {
+    let canonical =
+        std::fs::canonicalize(path).map_err(|e| PathContainmentError::Canonicalization {
             path: path.to_string_lossy().to_string(),
             source: e,
-        }
-    })?;
+        })?;
     Ok(canonical)
 }
 
-pub fn check_path_containment(
-    path: &Path,
-    base: &Path,
-) -> Result<PathBuf, PathContainmentError> {
+pub fn check_path_containment(path: &Path, base: &Path) -> Result<PathBuf, PathContainmentError> {
     if path.as_os_str().is_empty() || base.as_os_str().is_empty() {
         return Err(PathContainmentError::Empty);
     }

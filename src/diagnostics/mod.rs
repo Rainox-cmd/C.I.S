@@ -110,11 +110,26 @@ impl DiagnosticsReport {
             println!();
         }
 
-        let pass_count = self.checks.iter().filter(|c| c.health == Health::Pass).count();
-        let warn_count = self.checks.iter().filter(|c| c.health == Health::Warn).count();
-        let fail_count = self.checks.iter().filter(|c| c.health == Health::Fail).count();
+        let pass_count = self
+            .checks
+            .iter()
+            .filter(|c| c.health == Health::Pass)
+            .count();
+        let warn_count = self
+            .checks
+            .iter()
+            .filter(|c| c.health == Health::Warn)
+            .count();
+        let fail_count = self
+            .checks
+            .iter()
+            .filter(|c| c.health == Health::Fail)
+            .count();
 
-        println!("Summary: {} passed, {} warnings, {} failures", pass_count, warn_count, fail_count);
+        println!(
+            "Summary: {} passed, {} warnings, {} failures",
+            pass_count, warn_count, fail_count
+        );
     }
 
     pub fn to_json(&self) -> String {
@@ -212,11 +227,7 @@ pub fn check_database(index: &Index) -> Diagnostic {
             "Database",
             "Database is accessible and passes integrity check",
         ),
-        Ok(false) => Diagnostic::fail(
-            "Database",
-            "Database integrity check failed",
-            None,
-        ),
+        Ok(false) => Diagnostic::fail("Database", "Database integrity check failed", None),
         Err(e) => Diagnostic::fail(
             "Database",
             "Database is not accessible",
@@ -250,10 +261,7 @@ fn check_database_integrity(index: &Index) -> Result<bool, String> {
 }
 
 pub fn check_directories(project: &Project) -> Diagnostic {
-    let required = [
-        ("logs", &project.logs_dir),
-        ("cache", &project.cache_dir),
-    ];
+    let required = [("logs", &project.logs_dir), ("cache", &project.cache_dir)];
 
     let mut missing = Vec::new();
     for (name, path) in &required {
@@ -304,11 +312,12 @@ pub fn check_environment() -> Diagnostic {
     let cargo_home = std::env::var("CARGO_HOME");
     let mut details = Vec::new();
 
-    if rustc.is_ok() || std::process::Command::new("rustc")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    if rustc.is_ok()
+        || std::process::Command::new("rustc")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
     {
         details.push("rustc available".to_string());
     } else {
@@ -469,7 +478,13 @@ mod tests {
         let index = Index::open(&project, &config).unwrap();
         let report = run_all_checks(&project, &config, &index);
         for check in &report.checks {
-            assert_ne!(check.health, Health::Fail, "Check '{}' failed: {}", check.name, check.message);
+            assert_ne!(
+                check.health,
+                Health::Fail,
+                "Check '{}' failed: {}",
+                check.name,
+                check.message
+            );
         }
     }
 

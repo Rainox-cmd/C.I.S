@@ -136,8 +136,7 @@ impl Config {
 
     pub fn save(&self, project: &Project) -> Result<()> {
         let config_path = project.cis_dir().join("config.toml");
-        let content = toml::to_string_pretty(self)
-            .context("Failed to serialize config")?;
+        let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
         fs::write(&config_path, content)
             .with_context(|| format!("Failed to write {}", config_path.display()))?;
         Ok(())
@@ -151,15 +150,11 @@ impl Config {
         match parts[0] {
             "general" => match parts[1] {
                 "project_name" => self.general.project_name = value.to_string(),
-                "max_file_size_bytes" => {
-                    self.general.max_file_size_bytes = value.parse()?
-                }
+                "max_file_size_bytes" => self.general.max_file_size_bytes = value.parse()?,
                 _ => anyhow::bail!("Unknown config key: {}", key),
             },
             "scanner" => match parts[1] {
-                "enable_incremental" => {
-                    self.scanner.enable_incremental = value.parse()?
-                }
+                "enable_incremental" => self.scanner.enable_incremental = value.parse()?,
                 _ => anyhow::bail!("Unknown config key: {}", key),
             },
             "database" => match parts[1] {
@@ -170,18 +165,14 @@ impl Config {
                 "default_timeout_seconds" => {
                     self.security.default_timeout_seconds = value.parse()?
                 }
-                "max_output_bytes" => {
-                    self.security.max_output_bytes = value.parse()?
-                }
+                "max_output_bytes" => self.security.max_output_bytes = value.parse()?,
                 "require_confirmation_for_risky" => {
                     self.security.require_confirmation_for_risky = value.parse()?
                 }
                 "restrict_to_project_root" => {
                     self.security.restrict_to_project_root = value.parse()?
                 }
-                "redact_secrets" => {
-                    self.security.redact_secrets = value.parse()?
-                }
+                "redact_secrets" => self.security.redact_secrets = value.parse()?,
                 _ => anyhow::bail!("Unknown config key: {}", key),
             },
             _ => anyhow::bail!("Unknown config section: {}", parts[0]),
@@ -224,11 +215,11 @@ mod tests {
         let dir = tempdir().unwrap();
         let project = Project::new(dir.path().to_path_buf()).unwrap();
         project.init().unwrap();
-        
+
         let mut cfg = Config::default();
         cfg.general.project_name = "TestProject".to_string();
         cfg.save(&project).unwrap();
-        
+
         let loaded = Config::load(&project).unwrap();
         assert_eq!(loaded.general.project_name, "TestProject");
     }

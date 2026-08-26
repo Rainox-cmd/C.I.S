@@ -4,7 +4,10 @@ pub const SECRET_PATTERNS: &[(&str, &str)] = &[
     ("GitHub token", r"gh[pousr]_[A-Za-z0-9]{36,}"),
     ("Generic bearer token", r"(?i)bearer\s+[a-zA-Z0-9._\-]{10,}"),
     ("AWS access key", r"AKIA[0-9A-Z]{16}"),
-    ("AWS secret key", r"(?i)aws_secret_access_key\s*[=:]\s*[A-Za-z0-9/+=]{40}"),
+    (
+        "AWS secret key",
+        r"(?i)aws_secret_access_key\s*[=:]\s*[A-Za-z0-9/+=]{40}",
+    ),
     // Passwords in command lines
     ("password=", r"(?i)password=[^\s]+"),
     ("passwd=", r"(?i)passwd=[^\s]+"),
@@ -12,9 +15,15 @@ pub const SECRET_PATTERNS: &[(&str, &str)] = &[
     ("token=", r"(?i)token=[^\s]+"),
     ("secret=", r"(?i)secret=[^\s]+"),
     // Common env var patterns
-    ("API_KEY env", r"(?i)\b[A-Z_]*API[_-]?[A-Z_]*KEY[A-Z_]*\b\s*[=:]\s*\S+"),
+    (
+        "API_KEY env",
+        r"(?i)\b[A-Z_]*API[_-]?[A-Z_]*KEY[A-Z_]*\b\s*[=:]\s*\S+",
+    ),
     ("SECRET env", r"(?i)\b[A-Z_]*SECRET[A-Z_]*\b\s*[=:]\s*\S+"),
-    ("PASSWORD env", r"(?i)\b[A-Z_]*PASSWORD[A-Z_]*\b\s*[=:]\s*\S+"),
+    (
+        "PASSWORD env",
+        r"(?i)\b[A-Z_]*PASSWORD[A-Z_]*\b\s*[=:]\s*\S+",
+    ),
     ("TOKEN env", r"(?i)\b[A-Z_]*TOKEN[A-Z_]*\b\s*[=:]\s*\S+"),
 ];
 
@@ -22,9 +31,11 @@ pub fn redact_secrets(text: &str) -> String {
     let mut result = text.to_string();
     for (label, pattern) in SECRET_PATTERNS {
         if let Ok(re) = regex::Regex::new(pattern) {
-            result = re.replace_all(&result, |_caps: &regex::Captures| {
-                format!("[REDACTED:{}]", label)
-            }).to_string();
+            result = re
+                .replace_all(&result, |_caps: &regex::Captures| {
+                    format!("[REDACTED:{}]", label)
+                })
+                .to_string();
         }
     }
     result
@@ -52,9 +63,7 @@ const SENSITIVE_VAR_NAMES: &[&str] = &[
     "NIM_API_KEY",
 ];
 
-pub fn filter_env_vars(
-    current_env: &[(String, String)],
-) -> Vec<(String, String)> {
+pub fn filter_env_vars(current_env: &[(String, String)]) -> Vec<(String, String)> {
     current_env
         .iter()
         .filter(|(k, _)| !is_sensitive_var(k))
@@ -176,18 +185,9 @@ mod tests {
 
     #[test]
     fn test_redact_env_value() {
-        assert_eq!(
-            redact_env_value("API_KEY", "secret123", true),
-            "[REDACTED]"
-        );
-        assert_eq!(
-            redact_env_value("API_KEY", "secret123", false),
-            "secret123"
-        );
-        assert_eq!(
-            redact_env_value("PATH", "/usr/bin", true),
-            "/usr/bin"
-        );
+        assert_eq!(redact_env_value("API_KEY", "secret123", true), "[REDACTED]");
+        assert_eq!(redact_env_value("API_KEY", "secret123", false), "secret123");
+        assert_eq!(redact_env_value("PATH", "/usr/bin", true), "/usr/bin");
     }
 
     #[test]

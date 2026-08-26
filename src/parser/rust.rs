@@ -19,8 +19,17 @@ impl LanguageParser for RustParser {
         };
 
         // Extract functions
-        for cap in regex::Regex::new(r"fn\s+(\w+)\s*[<(]").unwrap().find_iter(content) {
-            let name = cap.as_str().split_whitespace().nth(1).unwrap().trim_end_matches(['<', '(']).to_string();
+        for cap in regex::Regex::new(r"fn\s+(\w+)\s*[<(]")
+            .unwrap()
+            .find_iter(content)
+        {
+            let name = cap
+                .as_str()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .trim_end_matches(['<', '('])
+                .to_string();
             result.symbols.push(Symbol {
                 name,
                 kind: SymbolKind::Function,
@@ -30,8 +39,17 @@ impl LanguageParser for RustParser {
         }
 
         // Extract structs
-        for cap in regex::Regex::new(r"struct\s+(\w+)\s*[;{<]").unwrap().find_iter(content) {
-            let name = cap.as_str().split_whitespace().nth(1).unwrap().trim_end_matches([';', '{', '<']).to_string();
+        for cap in regex::Regex::new(r"struct\s+(\w+)\s*[;{<]")
+            .unwrap()
+            .find_iter(content)
+        {
+            let name = cap
+                .as_str()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .trim_end_matches([';', '{', '<'])
+                .to_string();
             result.symbols.push(Symbol {
                 name,
                 kind: SymbolKind::Struct,
@@ -41,8 +59,17 @@ impl LanguageParser for RustParser {
         }
 
         // Extract enums
-        for cap in regex::Regex::new(r"enum\s+(\w+)\s*\{").unwrap().find_iter(content) {
-            let name = cap.as_str().split_whitespace().nth(1).unwrap().trim_end_matches('{').to_string();
+        for cap in regex::Regex::new(r"enum\s+(\w+)\s*\{")
+            .unwrap()
+            .find_iter(content)
+        {
+            let name = cap
+                .as_str()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .trim_end_matches('{')
+                .to_string();
             result.symbols.push(Symbol {
                 name,
                 kind: SymbolKind::Enum,
@@ -52,8 +79,17 @@ impl LanguageParser for RustParser {
         }
 
         // Extract traits
-        for cap in regex::Regex::new(r"trait\s+(\w+)\s*[{<]").unwrap().find_iter(content) {
-            let name = cap.as_str().split_whitespace().nth(1).unwrap().trim_end_matches(['{', '<']).to_string();
+        for cap in regex::Regex::new(r"trait\s+(\w+)\s*[{<]")
+            .unwrap()
+            .find_iter(content)
+        {
+            let name = cap
+                .as_str()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .trim_end_matches(['{', '<'])
+                .to_string();
             result.symbols.push(Symbol {
                 name,
                 kind: SymbolKind::Trait,
@@ -63,9 +99,20 @@ impl LanguageParser for RustParser {
         }
 
         // Extract imports (use statements)
-        for cap in regex::Regex::new(r"use\s+(.+?);").unwrap().find_iter(content) {
-            let path = cap.as_str().split_whitespace().nth(1).unwrap().trim_end_matches(';').to_string();
-            let is_rel = path.starts_with("crate::") || path.starts_with("super::") || path.starts_with("self::");
+        for cap in regex::Regex::new(r"use\s+(.+?);")
+            .unwrap()
+            .find_iter(content)
+        {
+            let path = cap
+                .as_str()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .trim_end_matches(';')
+                .to_string();
+            let is_rel = path.starts_with("crate::")
+                || path.starts_with("super::")
+                || path.starts_with("self::");
             result.imports.push(Import {
                 path,
                 is_relative: is_rel,

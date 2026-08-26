@@ -10,8 +10,6 @@ pub enum RiskLevel {
 }
 
 // Re-export only what is used externally to avoid unused-import warnings.
-pub use path::{
-    check_path_containment, PathContainmentError,
-};
+pub use path::{check_path_containment, PathContainmentError};
 pub use policy::{RiskyCommand, SecurityPolicy};
 pub use redaction::{build_audit_safe_command, is_sensitive_var, redact_secrets};

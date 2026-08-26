@@ -27,9 +27,7 @@ pub enum Commands {
         options: ScanOptions,
     },
     /// Parse a source file and extract symbols
-    Parse {
-        path: String,
-    },
+    Parse { path: String },
     /// Show or modify configuration
     Config {
         #[command(subcommand)]
@@ -41,7 +39,11 @@ pub enum Commands {
         #[arg(short, long)]
         yes: bool,
         /// Command and arguments to execute
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true, value_name = "COMMAND")]
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            value_name = "COMMAND"
+        )]
         args: Vec<String>,
     },
 }
@@ -51,10 +53,7 @@ pub enum ConfigAction {
     /// Show current configuration
     Show,
     /// Set a configuration value (format: <section>.<field>)
-    Set {
-        key: String,
-        value: String,
-    },
+    Set { key: String, value: String },
 }
 
 #[derive(Parser)]
@@ -74,7 +73,10 @@ impl Cli {
                 let cfg = config::Config::load(&project)?;
                 let _idx = index::Index::open(&project, &cfg)?;
                 println!("Initialized C.I.S. in {}", project.root.display());
-                println!("Config: {}", project.cis_dir().join("config.toml").display());
+                println!(
+                    "Config: {}",
+                    project.cis_dir().join("config.toml").display()
+                );
                 println!("Database: {}", project.db_path().display());
                 println!("Logs: {}", project.logs_dir.display());
                 println!("Cache: {}", project.cache_dir.display());
@@ -104,7 +106,10 @@ impl Cli {
                 println!("=============");
                 println!("Project root: {}", project.root.display());
                 println!("C.I.S. initialized: yes");
-                println!("Config: {}", project.cis_dir().join("config.toml").display());
+                println!(
+                    "Config: {}",
+                    project.cis_dir().join("config.toml").display()
+                );
                 println!();
 
                 idx.status()?;
@@ -126,18 +131,52 @@ impl Cli {
                         scan_root,
                         cfg.scanner.respect_gitignore,
                         cfg.scanner.respect_cisignore,
+                        cfg.general.max_file_size_bytes,
                     );
                     let result = scanner.scan_incremental(&previous)?;
-                    println!("Incremental scan complete: {} files", result.files.len());
+                    println!("Incremental scan complete");
+                    println!("  Files scanned: {}", result.scanned_count());
+                    println!("  Files skipped: {}", result.skipped_count());
+                    println!("  Files added: {}", result.files_added);
+                    println!("  Files changed: {}", result.files_changed);
+                    println!("  Files deleted: {}", result.files_deleted.len());
+                    println!("  Files unchanged: {}", result.files_unchanged);
+                    println!("  Total size: {} bytes", result.total_size);
+                    if !result.scan_errors.is_empty() {
+                        println!("  Errors: {}", result.scan_errors.len());
+                    }
                     idx.upsert_files(&result.files)?;
+                    idx.delete_files(&result.files_deleted)?;
                 } else {
                     let scanner = scanner::Scanner::new(
                         scan_root,
                         cfg.scanner.respect_gitignore,
                         cfg.scanner.respect_cisignore,
+                        cfg.general.max_file_size_bytes,
                     );
                     let result = scanner.scan()?;
-                    println!("Scan complete: {} files", result.files.len());
+                    println!("Scan complete");
+                    println!("  Files scanned: {}", result.scanned_count());
+                    println!("  Files skipped: {}", result.skipped_count());
+                    println!("  Total files discovered: {}", result.total_count());
+                    println!("  Total size: {} bytes", result.total_size);
+                    println!();
+                    println!("Language counts:");
+                    for (lang, count) in &result.language_counts {
+                        println!("  {}: {}", lang, count);
+                    }
+                    println!();
+                    println!("Category counts:");
+                    for (cat, count) in &result.category_counts {
+                        println!("  {}: {}", cat, count);
+                    }
+                    if !result.scan_errors.is_empty() {
+                        println!();
+                        println!("Errors:");
+                        for err in &result.scan_errors {
+                            println!("  {}", err);
+                        }
+                    }
                     idx.upsert_files(&result.files)?;
                 }
                 Ok(())
@@ -175,7 +214,11 @@ impl Cli {
                 }
                 println!("\nImports ({}):", result.imports.len());
                 for imp in &result.imports {
-                    let rel = if imp.is_relative { "relative" } else { "absolute" };
+                    let rel = if imp.is_relative {
+                        "relative"
+                    } else {
+                        "absolute"
+                    };
                     println!("  {} ({})", imp.path, rel);
                 }
                 Ok(())
@@ -198,7 +241,9 @@ impl Cli {
             }
             Commands::Run { yes, args } => {
                 if args.is_empty() {
-                    anyhow::bail!("No command specified. Usage: cis run [--yes] <command> [args...]");
+                    anyhow::bail!(
+                        "No command specified. Usage: cis run [--yes] <command> [args...]"
+                    );
                 }
 
                 let project = project::Project::discover()?;
@@ -218,10 +263,7 @@ impl Cli {
                 if result.requires_confirmation {
                     println!(
                         "Risky command requires confirmation: {}",
-                        result
-                            .risk_description
-                            .as_deref()
-                            .unwrap_or("unknown risk")
+                        result.risk_description.as_deref().unwrap_or("unknown risk")
                     );
                     println!("Review the command and rerun with --yes to proceed.");
                     process::exit(2);

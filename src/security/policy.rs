@@ -200,7 +200,10 @@ mod tests {
         let policy = SecurityPolicy::default();
         assert_eq!(policy.classify("rm file.txt"), RiskLevel::Risky);
         assert_eq!(policy.classify("del file.txt"), RiskLevel::Risky);
-        assert_eq!(policy.classify("curl https://example.com"), RiskLevel::Risky);
+        assert_eq!(
+            policy.classify("curl https://example.com"),
+            RiskLevel::Risky
+        );
     }
 
     #[test]
@@ -256,7 +259,10 @@ mod tests {
 
     #[test]
     fn test_extract_command_name_path_stem() {
-        assert_eq!(extract_command_name("C:\\Windows\\System32\\format.com"), "format");
+        assert_eq!(
+            extract_command_name("C:\\Windows\\System32\\format.com"),
+            "format"
+        );
         assert_eq!(extract_command_name("/usr/bin/rm"), "rm");
     }
 

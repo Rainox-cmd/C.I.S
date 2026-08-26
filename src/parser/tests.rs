@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use crate::parser::{LanguageParser, SymbolKind};
     use crate::parser::go::GoParser;
     use crate::parser::javascript::JavaScriptParser;
     use crate::parser::python::PythonParser;
     use crate::parser::rust::RustParser;
+    use crate::parser::{LanguageParser, SymbolKind};
 
     #[test]
     fn test_python_parser_extracts_functions() {
@@ -76,7 +76,10 @@ class MyClass {
 "#;
         let result = JavaScriptParser.parse(std::path::Path::new("test.js"), content);
         assert!(result.syntax_ok);
-        assert!(result.symbols.iter().any(|s| s.name == "MyClass" && matches!(s.kind, SymbolKind::Class)));
+        assert!(result
+            .symbols
+            .iter()
+            .any(|s| s.name == "MyClass" && matches!(s.kind, SymbolKind::Class)));
     }
 
     #[test]
@@ -116,8 +119,14 @@ struct MyStruct {
 "#;
         let result = RustParser.parse(std::path::Path::new("test.rs"), content);
         assert!(result.syntax_ok);
-        assert!(result.symbols.iter().any(|s| s.name == "MyStruct" && matches!(s.kind, SymbolKind::Struct)));
-        assert!(result.imports.iter().any(|i| i.path.contains("std::collections")));
+        assert!(result
+            .symbols
+            .iter()
+            .any(|s| s.name == "MyStruct" && matches!(s.kind, SymbolKind::Struct)));
+        assert!(result
+            .imports
+            .iter()
+            .any(|i| i.path.contains("std::collections")));
     }
 
     #[test]

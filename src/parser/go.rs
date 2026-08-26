@@ -19,8 +19,17 @@ impl LanguageParser for GoParser {
         };
 
         // Extract functions
-        for cap in regex::Regex::new(r"func\s+(\w+)\s*\(").unwrap().find_iter(content) {
-            let name = cap.as_str().split_whitespace().nth(1).unwrap().trim_end_matches('(').to_string();
+        for cap in regex::Regex::new(r"func\s+(\w+)\s*\(")
+            .unwrap()
+            .find_iter(content)
+        {
+            let name = cap
+                .as_str()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .trim_end_matches('(')
+                .to_string();
             result.symbols.push(Symbol {
                 name,
                 kind: SymbolKind::Function,
@@ -30,8 +39,17 @@ impl LanguageParser for GoParser {
         }
 
         // Extract methods (func with receiver)
-        for cap in regex::Regex::new(r"func\s*\([^)]+\)\s*(\w+)\s*\(").unwrap().find_iter(content) {
-            let name = cap.as_str().split_whitespace().last().unwrap().trim_end_matches('(').to_string();
+        for cap in regex::Regex::new(r"func\s*\([^)]+\)\s*(\w+)\s*\(")
+            .unwrap()
+            .find_iter(content)
+        {
+            let name = cap
+                .as_str()
+                .split_whitespace()
+                .last()
+                .unwrap()
+                .trim_end_matches('(')
+                .to_string();
             result.symbols.push(Symbol {
                 name,
                 kind: SymbolKind::Method,
@@ -41,7 +59,10 @@ impl LanguageParser for GoParser {
         }
 
         // Extract structs
-        for cap in regex::Regex::new(r"type\s+(\w+)\s+struct\s*\{").unwrap().find_iter(content) {
+        for cap in regex::Regex::new(r"type\s+(\w+)\s+struct\s*\{")
+            .unwrap()
+            .find_iter(content)
+        {
             let name = cap.as_str().split_whitespace().nth(1).unwrap().to_string();
             result.symbols.push(Symbol {
                 name,
@@ -52,7 +73,10 @@ impl LanguageParser for GoParser {
         }
 
         // Extract interfaces
-        for cap in regex::Regex::new(r"type\s+(\w+)\s+interface\s*\{").unwrap().find_iter(content) {
+        for cap in regex::Regex::new(r"type\s+(\w+)\s+interface\s*\{")
+            .unwrap()
+            .find_iter(content)
+        {
             let name = cap.as_str().split_whitespace().nth(1).unwrap().to_string();
             result.symbols.push(Symbol {
                 name,
@@ -63,7 +87,10 @@ impl LanguageParser for GoParser {
         }
 
         // Extract imports
-        for cap in regex::Regex::new(r"import\s*\(").unwrap().find_iter(content) {
+        for cap in regex::Regex::new(r"import\s*\(")
+            .unwrap()
+            .find_iter(content)
+        {
             let start = cap.end();
             if let Some(end) = content[start..].find(")") {
                 let block = &content[start..start + end];
@@ -74,21 +101,25 @@ impl LanguageParser for GoParser {
                     }
                     if let Some(quote_start) = line.find('"') {
                         if let Some(quote_end) = line[quote_start + 1..].find('"') {
-                    let path = line[quote_start + 1..quote_start + 1 + quote_end].to_string();
-                    let is_rel = path.starts_with(".");
-                    result.imports.push(Import {
-                        path,
-                        is_relative: is_rel,
-                        line: 0,
-                        column: 0,
-                    });
+                            let path =
+                                line[quote_start + 1..quote_start + 1 + quote_end].to_string();
+                            let is_rel = path.starts_with(".");
+                            result.imports.push(Import {
+                                path,
+                                is_relative: is_rel,
+                                line: 0,
+                                column: 0,
+                            });
                         }
                     }
                 }
             }
         }
 
-        for cap in regex::Regex::new(r#"import\s+"([^"]+)"#).unwrap().find_iter(content) {
+        for cap in regex::Regex::new(r#"import\s+"([^"]+)"#)
+            .unwrap()
+            .find_iter(content)
+        {
             let path = cap.as_str().split('"').nth(1).unwrap_or("").to_string();
             if !path.is_empty() {
                 let is_rel = path.starts_with(".");

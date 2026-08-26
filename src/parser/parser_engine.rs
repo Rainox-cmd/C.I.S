@@ -1,4 +1,7 @@
-use super::{generic::GenericParser, go::GoParser, javascript::JavaScriptParser, python::PythonParser, rust::RustParser, LanguageParser, ParseResult};
+use super::{
+    generic::GenericParser, go::GoParser, javascript::JavaScriptParser, python::PythonParser,
+    rust::RustParser, LanguageParser, ParseResult,
+};
 use std::path::Path;
 
 pub struct ParserEngine;

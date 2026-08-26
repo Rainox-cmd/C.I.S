@@ -19,8 +19,17 @@ impl LanguageParser for JavaScriptParser {
         };
 
         // Extract functions
-        for cap in regex::Regex::new(r"function\s+(\w+)\s*\(").unwrap().find_iter(content) {
-            let name = cap.as_str().split_whitespace().nth(1).unwrap().trim_end_matches('(').to_string();
+        for cap in regex::Regex::new(r"function\s+(\w+)\s*\(")
+            .unwrap()
+            .find_iter(content)
+        {
+            let name = cap
+                .as_str()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .trim_end_matches('(')
+                .to_string();
             result.symbols.push(Symbol {
                 name,
                 kind: SymbolKind::Function,
@@ -30,8 +39,20 @@ impl LanguageParser for JavaScriptParser {
         }
 
         // Extract arrow functions and const/let/var assignments
-        for cap in regex::Regex::new(r"(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[^=])\s*=>").unwrap().find_iter(content) {
-            let name = cap.as_str().split_whitespace().nth(1).unwrap().trim_end_matches('=').trim().to_string();
+        for cap in regex::Regex::new(
+            r"(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[^=])\s*=>",
+        )
+        .unwrap()
+        .find_iter(content)
+        {
+            let name = cap
+                .as_str()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .trim_end_matches('=')
+                .trim()
+                .to_string();
             result.symbols.push(Symbol {
                 name,
                 kind: SymbolKind::Function,
@@ -41,8 +62,17 @@ impl LanguageParser for JavaScriptParser {
         }
 
         // Extract classes
-        for cap in regex::Regex::new(r"class\s+(\w+)\s*[{(]").unwrap().find_iter(content) {
-            let name = cap.as_str().split_whitespace().nth(1).unwrap().trim_end_matches(['{', '(']).to_string();
+        for cap in regex::Regex::new(r"class\s+(\w+)\s*[{(]")
+            .unwrap()
+            .find_iter(content)
+        {
+            let name = cap
+                .as_str()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .trim_end_matches(['{', '('])
+                .to_string();
             result.symbols.push(Symbol {
                 name,
                 kind: SymbolKind::Class,
@@ -52,8 +82,17 @@ impl LanguageParser for JavaScriptParser {
         }
 
         // Extract methods inside classes
-        for cap in regex::Regex::new(r"class\s+(\w+)[\s\S]*?(?:async\s+)?(\w+)\s*\([^)]*\)\s*\{").unwrap().find_iter(content) {
-            let method_name = cap.as_str().split_whitespace().last().unwrap().trim_end_matches('(').to_string();
+        for cap in regex::Regex::new(r"class\s+(\w+)[\s\S]*?(?:async\s+)?(\w+)\s*\([^)]*\)\s*\{")
+            .unwrap()
+            .find_iter(content)
+        {
+            let method_name = cap
+                .as_str()
+                .split_whitespace()
+                .last()
+                .unwrap()
+                .trim_end_matches('(')
+                .to_string();
             result.symbols.push(Symbol {
                 name: method_name,
                 kind: SymbolKind::Method,
@@ -63,8 +102,17 @@ impl LanguageParser for JavaScriptParser {
         }
 
         // Extract imports
-        for cap in regex::Regex::new(r#"import\s+.*?from\s+['"]([^'"]+)['"]"#).unwrap().find_iter(content) {
-            let path = cap.as_str().split('\'').nth(1).or_else(|| cap.as_str().split('"').nth(1)).unwrap_or("").to_string();
+        for cap in regex::Regex::new(r#"import\s+.*?from\s+['"]([^'"]+)['"]"#)
+            .unwrap()
+            .find_iter(content)
+        {
+            let path = cap
+                .as_str()
+                .split('\'')
+                .nth(1)
+                .or_else(|| cap.as_str().split('"').nth(1))
+                .unwrap_or("")
+                .to_string();
             let is_rel = path.starts_with('.') || path.starts_with('/');
             result.imports.push(Import {
                 path,
@@ -74,8 +122,17 @@ impl LanguageParser for JavaScriptParser {
             });
         }
 
-        for cap in regex::Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap().find_iter(content) {
-            let path = cap.as_str().split('\'').nth(1).or_else(|| cap.as_str().split('"').nth(1)).unwrap_or("").to_string();
+        for cap in regex::Regex::new(r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#)
+            .unwrap()
+            .find_iter(content)
+        {
+            let path = cap
+                .as_str()
+                .split('\'')
+                .nth(1)
+                .or_else(|| cap.as_str().split('"').nth(1))
+                .unwrap_or("")
+                .to_string();
             let is_rel = path.starts_with('.') || path.starts_with('/');
             result.imports.push(Import {
                 path,
@@ -85,8 +142,17 @@ impl LanguageParser for JavaScriptParser {
             });
         }
 
-        for cap in regex::Regex::new(r#"import\s*\(\s*['"]([^'"]+)['"]\s*\)"#).unwrap().find_iter(content) {
-            let path = cap.as_str().split('\'').nth(1).or_else(|| cap.as_str().split('"').nth(1)).unwrap_or("").to_string();
+        for cap in regex::Regex::new(r#"import\s*\(\s*['"]([^'"]+)['"]\s*\)"#)
+            .unwrap()
+            .find_iter(content)
+        {
+            let path = cap
+                .as_str()
+                .split('\'')
+                .nth(1)
+                .or_else(|| cap.as_str().split('"').nth(1))
+                .unwrap_or("")
+                .to_string();
             let is_rel = path.starts_with('.') || path.starts_with('/');
             result.imports.push(Import {
                 path,

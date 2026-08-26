@@ -106,8 +106,10 @@ impl TerminalExecutor {
         cwd: Option<&Path>,
         skip_confirmation: bool,
     ) -> Result<ExecutionResult> {
-        let full_command =
-            build_audit_safe_command(command, &args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        let full_command = build_audit_safe_command(
+            command,
+            &args.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+        );
 
         let full_cmd_string = if args.is_empty() {
             command.to_string()
@@ -127,7 +129,9 @@ impl TerminalExecutor {
                 duration: Duration::ZERO,
                 timed_out: false,
                 blocked: true,
-                block_reason: Some("Command is on the denylist or not in the allowlist".to_string()),
+                block_reason: Some(
+                    "Command is on the denylist or not in the allowlist".to_string(),
+                ),
                 requires_confirmation: false,
                 risk_description: None,
                 audit_log_path: self.audit_log_path(),
@@ -358,10 +362,9 @@ impl TerminalExecutor {
     ) -> Result<()> {
         let audit_path = self.audit_log_path();
         if let Some(parent) = audit_path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| {
-                    format!("Failed to create audit log directory: {}", parent.display())
-                })?;
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create audit log directory: {}", parent.display())
+            })?;
         }
 
         let allowed = !result.blocked && !result.requires_confirmation && executed;
@@ -492,9 +495,7 @@ mod tests {
     #[test]
     fn test_execute_blocked_command() {
         let (executor, _dir) = make_test_executor();
-        let result = executor
-            .execute("rm", &["-rf", "/"], None, false)
-            .unwrap();
+        let result = executor.execute("rm", &["-rf", "/"], None, false).unwrap();
         assert!(result.is_blocked());
         assert!(result.stderr.contains("blocked"));
     }
@@ -502,18 +503,14 @@ mod tests {
     #[test]
     fn test_execute_non_allowlisted_blocked() {
         let (executor, _dir) = make_test_executor();
-        let result = executor
-            .execute("evil_command", &[], None, false)
-            .unwrap();
+        let result = executor.execute("evil_command", &[], None, false).unwrap();
         assert!(result.is_blocked());
     }
 
     #[test]
     fn test_execute_risky_command_requires_confirmation() {
         let (executor, _dir) = make_test_executor();
-        let result = executor
-            .execute("rm", &["file.txt"], None, false)
-            .unwrap();
+        let result = executor.execute("rm", &["file.txt"], None, false).unwrap();
         assert!(result.requires_confirmation);
         assert!(!result.is_blocked());
         assert!(result.stderr.contains("confirmation"));
@@ -526,12 +523,10 @@ mod tests {
         fs::create_dir_all(&logs_dir).unwrap();
         let mut policy = SecurityPolicy::default();
         policy.allowlist.clear();
-        policy.risky_patterns = vec![
-            RiskyCommand {
-                pattern: "cargo".to_string(),
-                description: "Test risky command".to_string(),
-            },
-        ];
+        policy.risky_patterns = vec![RiskyCommand {
+            pattern: "cargo".to_string(),
+            description: "Test risky command".to_string(),
+        }];
         let executor = TerminalExecutor::new(
             dir.path().to_path_buf(),
             logs_dir,
@@ -575,12 +570,7 @@ mod tests {
             true,
         );
         // sleep command may not exist on all systems; use a long-running cargo sub-command
-        let result = executor.execute(
-            "cargo",
-            &["--help"],
-            None,
-            true,
-        );
+        let result = executor.execute("cargo", &["--help"], None, true);
         // With 1ms timeout, cargo --help likely won't finish
         match result {
             Ok(r) => {
@@ -669,9 +659,7 @@ mod tests {
     #[test]
     fn test_execute_blocked_audit_log() {
         let (executor, _dir) = make_test_executor();
-        let _ = executor
-            .execute("rm", &["-rf", "/"], None, false)
-            .unwrap();
+        let _ = executor.execute("rm", &["-rf", "/"], None, false).unwrap();
         let audit_path = executor.audit_log_path();
         assert!(audit_path.exists());
         let contents = fs::read_to_string(&audit_path).unwrap();
@@ -681,9 +669,7 @@ mod tests {
     #[test]
     fn test_execute_risky_audit_log() {
         let (executor, _dir) = make_test_executor();
-        let _ = executor
-            .execute("rm", &["file.txt"], None, false)
-            .unwrap();
+        let _ = executor.execute("rm", &["file.txt"], None, false).unwrap();
         let audit_path = executor.audit_log_path();
         let contents = fs::read_to_string(&audit_path).unwrap();
         assert!(contents.contains("risky"));
@@ -694,25 +680,16 @@ mod tests {
         let (executor, dir) = make_test_executor();
         let subdir = dir.path().join("subdir");
         fs::create_dir_all(&subdir).unwrap();
-        let result = executor.execute(
-            "cargo",
-            &["--version"],
-            Some(&subdir),
-            false,
-        );
+        let result = executor.execute("cargo", &["--version"], Some(&subdir), false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_path_containment_outside_project() {
         let (executor, _dir) = make_test_executor();
-        let result = executor.execute(
-            "cargo",
-            &["--version"],
-            Some(Path::new("/")),
-            false,
-        )
-        .unwrap();
+        let result = executor
+            .execute("cargo", &["--version"], Some(Path::new("/")), false)
+            .unwrap();
         assert!(result.is_blocked());
         assert!(result.stderr.contains("containment") || result.stderr.contains("not contained"));
     }
