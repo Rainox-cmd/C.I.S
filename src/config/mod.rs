@@ -10,6 +10,16 @@ pub struct Config {
     pub scanner: ScannerConfig,
     pub database: DatabaseConfig,
     pub security: SecurityConfig,
+    pub context: ContextConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextConfig {
+    pub max_session_context_bytes: u64,
+    pub max_sessions: usize,
+    pub max_total_context_bytes: u64,
+    pub max_context_file_bytes: u64,
+    pub session_ttl_seconds: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +122,13 @@ impl Default for Config {
                 restrict_to_project_root: true,
                 redact_secrets: true,
             },
+            context: ContextConfig {
+                max_session_context_bytes: 10 * 1024 * 1024,
+                max_sessions: 50,
+                max_total_context_bytes: 500 * 1024 * 1024,
+                max_context_file_bytes: 1024 * 1024,
+                session_ttl_seconds: 7 * 24 * 60 * 60,
+            },
         }
     }
 }
@@ -179,6 +196,14 @@ impl Config {
                     self.security.restrict_to_project_root = value.parse()?
                 }
                 "redact_secrets" => self.security.redact_secrets = value.parse()?,
+                _ => anyhow::bail!("Unknown config key: {}", key),
+            },
+            "context" => match parts[1] {
+                "max_session_context_bytes" => self.context.max_session_context_bytes = value.parse()?,
+                "max_sessions" => self.context.max_sessions = value.parse()?,
+                "max_total_context_bytes" => self.context.max_total_context_bytes = value.parse()?,
+                "max_context_file_bytes" => self.context.max_context_file_bytes = value.parse()?,
+                "session_ttl_seconds" => self.context.session_ttl_seconds = value.parse()?,
                 _ => anyhow::bail!("Unknown config key: {}", key),
             },
             _ => anyhow::bail!("Unknown config section: {}", parts[0]),

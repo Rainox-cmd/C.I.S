@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::process;
 
-use crate::{config, diagnostics, git, index, parser, project, scanner, terminal};
+use crate::{config, diagnostics, git, index, memory, parser, project, scanner, terminal};
 
 #[derive(Parser)]
 #[command(name = "cis")]
@@ -67,10 +67,15 @@ pub enum Commands {
         )]
         args: Vec<String>,
     },
-    /// Git integration commands
+     /// Git integration commands
     Git {
         #[command(subcommand)]
         subcommand: GitSubcommand,
+    },
+    /// Memory management commands
+    Memory {
+        #[command(subcommand)]
+        subcommand: MemorySubcommand,
     },
 }
 
@@ -80,6 +85,87 @@ pub enum ConfigAction {
     Show,
     /// Set a configuration value (format: <section>.<field>)
     Set { key: String, value: String },
+}
+
+#[derive(Subcommand)]
+pub enum MemorySubcommand {
+    /// List all project memory entries
+    List,
+    /// Get a memory entry (project memory)
+    Get {
+        /// Key of the entry
+        key: String,
+    },
+    /// Set a project memory entry
+    Set {
+        /// Key for the entry
+        key: String,
+        /// Value for the entry
+        value: String,
+        /// Provenance (detected, inferred, ai_generated, developer_confirmed)
+        #[arg(short, long, default_value = "detected")]
+        provenance: String,
+        /// Category for the entry
+        #[arg(short, long, default_value = "general")]
+        category: String,
+        /// Tags for the entry (comma-separated)
+        #[arg(short, long, value_delimiter = ',')]
+        tags: Vec<String>,
+    },
+    /// Delete a project memory entry
+    Delete {
+        /// Key of the entry to delete
+        key: String,
+    },
+    /// List all session IDs
+    Sessions,
+    /// Session memory operations
+    Session {
+        #[command(subcommand)]
+        subcommand: SessionSubcommand,
+    },
+    /// Show storage usage and limits
+    Usage,
+    /// Prune expired session memory (with archive before deletion)
+    Prune,
+}
+
+#[derive(Subcommand)]
+pub enum SessionSubcommand {
+    /// List entries in a session
+    List {
+        /// Session ID
+        session_id: String,
+    },
+    /// Get a session memory entry
+    Get {
+        /// Session ID
+        session_id: String,
+        /// Key of the entry
+        key: String,
+    },
+    /// Set a session memory entry
+    Set {
+        /// Session ID
+        session_id: String,
+        /// Key for the entry
+        key: String,
+        /// Value for the entry
+        value: String,
+        /// Provenance
+        #[arg(short, long, default_value = "detected")]
+        provenance: String,
+        /// Tags (comma-separated)
+        #[arg(short, long, value_delimiter = ',')]
+        tags: Vec<String>,
+    },
+    /// Delete a session memory entry
+    Delete {
+        /// Session ID
+        session_id: String,
+        /// Key of the entry to delete
+        key: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -551,33 +637,57 @@ impl Cli {
                   }
                   Ok(())
               }
+              Commands::Config { action } => {
+                let project = project::Project::discover()?;
+                let mut cfg = config::Config::load(&project)?;
+                match action {
+                    ConfigAction::Show => {
+                        println!("{}", toml::to_string_pretty(&cfg)?);
+                        Ok(())
+                    }
+                    ConfigAction::Set { key, value } => {
+                        cfg.set(&key, &value)?;
+                        cfg.save(&project)?;
+                        println!("Set {} = {}", key, value);
+                        Ok(())
+                    }
+                }
+            }
               Commands::Git { subcommand } => {
                   let project = project::Project::discover()?;
                   let client = git::GitClient::new(&project.root)?;
 
-                  if !client.is_repo() {
-                      println!("Not a Git repository: {}", project.root.display());
-                      return Ok(());
-                  }
-
                   match subcommand {
                       GitSubcommand::Status => {
-                          let entries = client.status()?;
+                          if !client.is_repo() {
+                              println!("Not a Git repository");
+                              return Ok(());
+                          }
                           println!("Branch: {}", client.current_branch()?);
                           println!("Dirty: {}", client.is_dirty()?);
-                          println!();
+
+                          if let Ok(hash) = client.short_commit_hash() {
+                              if !hash.is_empty() {
+                                  println!("HEAD: {}", hash);
+                              }
+                          }
+
+                          let entries = client.status()?;
                           if entries.is_empty() {
                               println!("Working tree clean");
                           } else {
-                              println!("Changes:");
+                              println!("\nChanges:");
                               for e in &entries {
                                   println!("  {} {}", e.status, e.path);
                               }
-                              println!("\n{} file(s) changed", entries.len());
                           }
                           Ok(())
                       }
                       GitSubcommand::Diff => {
+                          if !client.is_repo() {
+                              println!("Not a Git repository");
+                              return Ok(());
+                          }
                           let diff = client.diff()?;
                           if diff.is_empty() {
                               println!("No uncommitted changes");
@@ -587,6 +697,10 @@ impl Cli {
                           Ok(())
                       }
                       GitSubcommand::DiffStaged => {
+                          if !client.is_repo() {
+                              println!("Not a Git repository");
+                              return Ok(());
+                          }
                           let diff = client.diff_staged()?;
                           if diff.is_empty() {
                               println!("No staged changes");
@@ -596,6 +710,10 @@ impl Cli {
                           Ok(())
                       }
                       GitSubcommand::DiffStat => {
+                          if !client.is_repo() {
+                              println!("Not a Git repository");
+                              return Ok(());
+                          }
                           let entries = client.diff_stat()?;
                           if entries.is_empty() {
                               println!("No uncommitted changes");
@@ -615,6 +733,10 @@ impl Cli {
                           Ok(())
                       }
                       GitSubcommand::Log { count } => {
+                          if !client.is_repo() {
+                              println!("Not a Git repository");
+                              return Ok(());
+                          }
                           let commits = client.log(count)?;
                           if commits.is_empty() {
                               println!("No commits found");
@@ -629,6 +751,10 @@ impl Cli {
                           Ok(())
                       }
                       GitSubcommand::History { count, path } => {
+                          if !client.is_repo() {
+                              println!("Not a Git repository");
+                              return Ok(());
+                          }
                           let commits = client.file_history(&path, count)?;
                           if commits.is_empty() {
                               println!("No history for '{}'", path);
@@ -643,10 +769,16 @@ impl Cli {
                           Ok(())
                       }
                       GitSubcommand::Blame { path } => {
+                          if !client.is_repo() {
+                              println!("Not a Git repository");
+                              return Ok(());
+                          }
                           match client.file_last_commit(&path)? {
                               Some(c) => {
-                                  println!("{}: last modified by {} <{}> at {}", path, c.author, c.author_email, c.date);
-                                  println!("  commit {} - {}", c.short_hash, c.message);
+                                  println!("Path: {}", path);
+                                  println!("  Last commit: {} by {} <{}>", c.short_hash, c.author, c.author_email);
+                                  println!("  Date: {}", c.date);
+                                  println!("  Message: {}", c.message);
                               }
                               None => {
                                   println!("No Git history for '{}'", path);
@@ -655,10 +787,18 @@ impl Cli {
                           Ok(())
                       }
                       GitSubcommand::Branch => {
+                          if !client.is_repo() {
+                              println!("Not a Git repository");
+                              return Ok(());
+                          }
                           println!("{}", client.current_branch()?);
                           Ok(())
                       }
                       GitSubcommand::IsDirty => {
+                          if !client.is_repo() {
+                              println!("Not a Git repository");
+                              return Ok(());
+                          }
                           let dirty = client.is_dirty()?;
                           if dirty {
                               println!("Working tree is dirty");
@@ -669,23 +809,164 @@ impl Cli {
                       }
                   }
               }
-              Commands::Config { action } => {
-                let project = project::Project::discover()?;
-                let mut cfg = config::Config::load(&project)?;
-                match action {
-                    ConfigAction::Show => {
-                        println!("{}", toml::to_string_pretty(&cfg)?);
-                        Ok(())
-                    }
-                    ConfigAction::Set { key, value } => {
-                        cfg.set(&key, &value)?;
-                        cfg.save(&project)?;
-                        println!("Set {} = {}", key, value);
-                        Ok(())
-                    }
-                }
-            }
-            Commands::Run { yes, args } => {
+              Commands::Memory { subcommand } => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let mem = memory::MemoryManager::new(&project, &cfg.context)?;
+
+                  match subcommand {
+                      MemorySubcommand::List => {
+                          let entries = mem.project_list()?;
+                          if entries.is_empty() {
+                              println!("No project memory entries");
+                          } else {
+                              println!("Project memory ({} entries):", entries.len());
+                              for e in &entries {
+                                  println!(
+                                      "  {} = {} [{}, {}] tags: [{}]",
+                                      e.key, e.value, e.provenance, e.category,
+                                      e.tags.join(", ")
+                                  );
+                              }
+                          }
+                          Ok(())
+                      }
+                      MemorySubcommand::Get { key } => {
+                          match mem.project_get(&key)? {
+                              Some(e) => {
+                                  println!("Key: {}", e.key);
+                                  println!("Value: {}", e.value);
+                                  println!("Provenance: {}", e.provenance);
+                                  println!("Category: {}", e.category);
+                                  println!("Created: {}", e.created_at);
+                                  println!("Updated: {}", e.updated_at);
+                                  if let Some(expires) = e.expires_at {
+                                      println!("Expires: {}", expires);
+                                  }
+                                  if !e.tags.is_empty() {
+                                      println!("Tags: {}", e.tags.join(", "));
+                                  }
+                              }
+                              None => {
+                                  println!("No memory entry found for key: '{}'", key);
+                              }
+                          }
+                          Ok(())
+                      }
+                      MemorySubcommand::Set { key, value, provenance, category, tags } => {
+                          let prov: memory::Provenance = provenance.parse()?;
+                          mem.project_set(&key, &value, prov, &category, None, tags)?;
+                          println!("Set '{}' = '{}' (provenance: {}, category: {})", key, value, prov, category);
+                          Ok(())
+                      }
+                      MemorySubcommand::Delete { key } => {
+                          let deleted = mem.project_delete(&key)?;
+                          if deleted {
+                              println!("Deleted memory entry: '{}'", key);
+                          } else {
+                              println!("No memory entry found for key: '{}'", key);
+                          }
+                          Ok(())
+                      }
+                      MemorySubcommand::Sessions => {
+                          let sessions = mem.list_sessions()?;
+                          if sessions.is_empty() {
+                              println!("No sessions found");
+                          } else {
+                              println!("Sessions ({}):", sessions.len());
+                              for s in &sessions {
+                                  println!("  session-{}", s);
+                              }
+                          }
+                          Ok(())
+                      }
+                      MemorySubcommand::Session { subcommand } => {
+                          match subcommand {
+                              SessionSubcommand::List { session_id } => {
+                                  let entries = mem.session_list(&session_id)?;
+                                  if entries.is_empty() {
+                                      println!("No entries in session: {}", session_id);
+                                  } else {
+                                      println!("Session '{}' ({} entries):", session_id, entries.len());
+                                      for e in &entries {
+                                          println!("  {} = {}", e.key, e.value);
+                                      }
+                                  }
+                                  Ok(())
+                              }
+                              SessionSubcommand::Get { session_id, key } => {
+                                  match mem.session_get(&session_id, &key)? {
+                                      Some(e) => {
+                                          println!("Key: {}", e.key);
+                                          println!("Value: {}", e.value);
+                                          println!("Provenance: {}", e.provenance);
+                                      }
+                                      None => {
+                                          println!("No entry found for session '{}' key '{}'", session_id, key);
+                                      }
+                                  }
+                                  Ok(())
+                              }
+                              SessionSubcommand::Set { session_id, key, value, provenance, tags } => {
+                                  let prov: memory::Provenance = provenance.parse()?;
+                                  mem.session_set(&session_id, &key, &value, prov, None, tags)?;
+                                  println!("Set session '{}' key '{}' = '{}'", session_id, key, value);
+                                  Ok(())
+                              }
+                              SessionSubcommand::Delete { session_id, key } => {
+                                  let deleted = mem.session_delete(&session_id, &key)?;
+                                  if deleted {
+                                      println!("Deleted session '{}' key '{}'", session_id, key);
+                                  } else {
+                                      println!("No entry found for session '{}' key '{}'", session_id, key);
+                                  }
+                                  Ok(())
+                              }
+                          }
+                      }
+                      MemorySubcommand::Usage => {
+                          let (project_size, total_size, session_count) = mem.get_storage_usage()?;
+                          println!("Memory usage:");
+                          println!("  Project memory: {} bytes", project_size);
+                          println!("  Total context: {} bytes", total_size);
+                          println!("  Sessions: {}", session_count);
+                          println!();
+                          println!("Limits:");
+                          println!("  Per-session: {} bytes", cfg.context.max_session_context_bytes);
+                          println!("  Max sessions: {}", cfg.context.max_sessions);
+                          println!("  Total storage: {} bytes", cfg.context.max_total_context_bytes);
+                          println!("  Max file size: {} bytes", cfg.context.max_context_file_bytes);
+                          println!("  Session TTL: {} seconds", cfg.context.session_ttl_seconds);
+
+                          let warnings = mem.warn_if_near_limits();
+                          if !warnings.is_empty() {
+                              println!();
+                              println!("Warnings:");
+                              for w in &warnings {
+                                  println!("  {}", w);
+                              }
+                          }
+                          Ok(())
+                      }
+                      MemorySubcommand::Prune => {
+                          let expired = mem.expired_sessions()?;
+                          if expired.is_empty() {
+                              println!("No expired sessions to prune");
+                          } else {
+                              println!("Expired sessions (will be archived before deletion):");
+                              for s in &expired {
+                                  println!("  session-{}", s);
+                              }
+                              println!();
+                              println!("{} session(s) will be pruned", expired.len());
+                              let pruned = mem.prune_expired_sessions()?;
+                              println!("Pruned {} session(s) (archived to .cis/cache/deleted_sessions/)", pruned.len());
+                          }
+                          Ok(())
+                      }
+                  }
+              }
+              Commands::Run { yes, args } => {
                 if args.is_empty() {
                     anyhow::bail!(
                         "No command specified. Usage: cis run [--yes] <command> [args...]"

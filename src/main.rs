@@ -7,6 +7,7 @@ mod diagnostics;
 mod git;
 #[allow(dead_code, unused_imports)]
 mod index;
+mod memory;
 mod parser;
 mod project;
 #[allow(dead_code)]
