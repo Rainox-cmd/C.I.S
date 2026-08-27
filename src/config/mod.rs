@@ -17,6 +17,8 @@ pub struct GeneralConfig {
     pub project_name: String,
     pub ignore_dirs: Vec<String>,
     pub max_file_size_bytes: u64,
+    pub max_files_per_batch: usize,
+    pub parse_timeout_seconds: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +62,8 @@ impl Default for Config {
                     "__pycache__".into(),
                 ],
                 max_file_size_bytes: 5 * 1024 * 1024,
+                max_files_per_batch: 500,
+                parse_timeout_seconds: 10,
             },
             scanner: ScannerConfig {
                 languages: vec![
@@ -148,9 +152,11 @@ impl Config {
             anyhow::bail!("Config key must be in format <section>.<field>");
         }
         match parts[0] {
-            "general" => match parts[1] {
+             "general" => match parts[1] {
                 "project_name" => self.general.project_name = value.to_string(),
                 "max_file_size_bytes" => self.general.max_file_size_bytes = value.parse()?,
+                "max_files_per_batch" => self.general.max_files_per_batch = value.parse()?,
+                "parse_timeout_seconds" => self.general.parse_timeout_seconds = value.parse()?,
                 _ => anyhow::bail!("Unknown config key: {}", key),
             },
             "scanner" => match parts[1] {
