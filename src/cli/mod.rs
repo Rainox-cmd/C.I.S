@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::process;
 
-use crate::{config, diagnostics, git, index, memory, mcp, parser, project, scanner, terminal};
+use crate::{config, context, diagnostics, git, index, memory, mcp, parser, project, scanner, terminal};
 
 #[derive(Parser)]
 #[command(name = "cis")]
@@ -76,6 +76,11 @@ pub enum Commands {
     Memory {
         #[command(subcommand)]
         subcommand: MemorySubcommand,
+    },
+    /// Context export/import commands
+    Context {
+        #[command(subcommand)]
+        subcommand: ContextSubcommand,
     },
     /// MCP server mode (for AI integration)
     Mcp,
@@ -167,6 +172,43 @@ pub enum SessionSubcommand {
         session_id: String,
         /// Key of the entry to delete
         key: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ContextSubcommand {
+    /// Export project context to a portable archive
+    Export {
+        /// Output file path (e.g., context.zip)
+        #[arg(short, long)]
+        output: String,
+        /// Skip project memory
+        #[arg(long)]
+        no_project_memory: bool,
+        /// Skip session memory
+        #[arg(long)]
+        no_sessions: bool,
+    },
+    /// Import project context from an archive
+    Import {
+        /// Archive file path to import
+        #[arg(short, long)]
+        input: String,
+        /// Allow overwriting existing entries
+        #[arg(long)]
+        allow_overwrite: bool,
+        /// Skip stale reference detection
+        #[arg(long)]
+        skip_stale: bool,
+        /// Skip hash verification
+        #[arg(long)]
+        skip_verify: bool,
+    },
+    /// Verify an archive is valid
+    Verify {
+        /// Archive file path
+        #[arg(short, long)]
+        input: String,
     },
 }
 
@@ -974,6 +1016,79 @@ impl Cli {
                   let server = mcp::McpServer::new(project, cfg)?;
                   server.run_stdio()?;
                   Ok(())
+              }
+              Commands::Context { subcommand } => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let idx = index::Index::open(&project, &cfg)?;
+
+                  match subcommand {
+                      ContextSubcommand::Export { output, no_project_memory, no_sessions } => {
+                          let options = context::ExportOptions {
+                              include_project_memory: !no_project_memory,
+                              include_sessions: !no_sessions,
+                          };
+                          let output_path = std::path::PathBuf::from(&output);
+                          let result = context::Exporter::export(&project, &idx, &options, &output_path)?;
+                          println!("Exported context to: {}", result.archive_path);
+                          println!("  Files: {}", result.files_exported);
+                          println!("  Sessions: {}", result.sessions_exported);
+                          println!("  Project memory entries: {}", result.project_memory_entries);
+                          println!("  Archive size: {} bytes", result.archive_size);
+                          Ok(())
+                      }
+                      ContextSubcommand::Import { input, allow_overwrite, skip_stale, skip_verify } => {
+                          let options = context::ImportOptions {
+                              allow_overwrite,
+                              skip_stale,
+                              verify_hashes: !skip_verify,
+                          };
+                          let input_path = std::path::PathBuf::from(&input);
+                          if !input_path.exists() {
+                              anyhow::bail!("Archive not found: {}", input);
+                          }
+                          let result = context::Importer::import(&input_path, &project, &options)?;
+                          println!("Import results:");
+                          println!("  Files imported: {}", result.files_imported);
+                          println!("  Sessions imported: {}", result.sessions_imported);
+                          println!("  Memory entries imported: {}", result.project_memory_entries);
+
+                          if !result.stale_references.is_empty() {
+                              println!("\nStale references (not silently ignored):");
+                              for r in &result.stale_references {
+                                  println!("  {} ({})", r.rel_path, r.kind);
+                              }
+                          }
+
+                          if !result.changed_files.is_empty() {
+                              println!("\nChanged files:");
+                              for c in &result.changed_files {
+                                  println!("  {} ({})", c.rel_path, c.status);
+                              }
+                          }
+
+                          if !result.warnings.is_empty() {
+                              println!("\nWarnings:");
+                              for w in &result.warnings {
+                                  println!("  {}", w);
+                              }
+                          }
+                          Ok(())
+                      }
+                      ContextSubcommand::Verify { input } => {
+                          let input_path = std::path::PathBuf::from(&input);
+                          if !input_path.exists() {
+                              anyhow::bail!("Archive not found: {}", input);
+                          }
+                          let valid = context::Importer::verify_archive(&input_path)?;
+                          if valid {
+                              println!("Archive is valid: {}", input);
+                          } else {
+                              println!("Archive is invalid (missing manifest): {}", input);
+                          }
+                          Ok(())
+                      }
+                  }
               }
               Commands::Run { yes, args } => {
                 if args.is_empty() {

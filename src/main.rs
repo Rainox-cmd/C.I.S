@@ -13,6 +13,8 @@ mod mcp;
 mod parser;
 mod project;
 #[allow(dead_code)]
+mod context;
+#[allow(dead_code)]
 mod scanner;
 #[allow(dead_code, unused_imports)]
 mod security;
