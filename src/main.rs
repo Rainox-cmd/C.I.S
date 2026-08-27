@@ -8,6 +8,8 @@ mod git;
 #[allow(dead_code, unused_imports)]
 mod index;
 mod memory;
+#[allow(dead_code)]
+mod mcp;
 mod parser;
 mod project;
 #[allow(dead_code)]

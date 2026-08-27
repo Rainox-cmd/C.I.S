@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::process;
 
-use crate::{config, diagnostics, git, index, memory, parser, project, scanner, terminal};
+use crate::{config, diagnostics, git, index, memory, mcp, parser, project, scanner, terminal};
 
 #[derive(Parser)]
 #[command(name = "cis")]
@@ -77,6 +77,8 @@ pub enum Commands {
         #[command(subcommand)]
         subcommand: MemorySubcommand,
     },
+    /// MCP server mode (for AI integration)
+    Mcp,
 }
 
 #[derive(Subcommand)]
@@ -965,6 +967,13 @@ impl Cli {
                           Ok(())
                       }
                   }
+              }
+              Commands::Mcp => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let server = mcp::McpServer::new(project, cfg)?;
+                  server.run_stdio()?;
+                  Ok(())
               }
               Commands::Run { yes, args } => {
                 if args.is_empty() {
