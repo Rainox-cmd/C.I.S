@@ -204,6 +204,26 @@ impl Index {
         Ok(())
     }
 
+    pub fn update_git_metadata(&self, rel_path: &str, commit_hash: Option<&str>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE files SET commit_hash = ?1, index_stage = ?2 WHERE rel_path = ?3",
+            rusqlite::params![commit_hash, "indexed", rel_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_file_git_metadata(&self) -> Result<Vec<(String, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT rel_path, commit_hash FROM files WHERE commit_hash IS NOT NULL"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let path: String = row.get(0)?;
+            let hash: Option<String> = row.get(1)?;
+            Ok((path, hash))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().context("Failed to retrieve git metadata")
+    }
+
     pub fn upsert_symbols(
         &self,
         rel_path: &str,
@@ -665,6 +685,8 @@ impl Index {
                 complexity_score INTEGER,
                 complexity_level TEXT,
                 risk_level TEXT,
+                commit_hash TEXT,
+                index_stage TEXT,
                 indexed_at REAL
             );
 
@@ -792,6 +814,19 @@ impl Index {
                  CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_file_id);
                  CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_file_id);
                  CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(dep_type);",
+            )?;
+        }
+        let has_commit_hash: bool = self.conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('files') WHERE name = 'commit_hash'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0) == 1;
+        if !has_commit_hash {
+            self.conn.execute_batch(
+                "ALTER TABLE files ADD COLUMN commit_hash TEXT;
+                 ALTER TABLE files ADD COLUMN index_stage TEXT;",
             )?;
         }
 

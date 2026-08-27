@@ -4,6 +4,8 @@ mod config;
 #[allow(dead_code)]
 mod diagnostics;
 #[allow(dead_code)]
+mod git;
+#[allow(dead_code, unused_imports)]
 mod index;
 mod parser;
 mod project;

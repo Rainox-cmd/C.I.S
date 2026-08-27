@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::process;
 
-use crate::{config, diagnostics, index, parser, project, scanner, terminal};
+use crate::{config, diagnostics, git, index, parser, project, scanner, terminal};
 
 #[derive(Parser)]
 #[command(name = "cis")]
@@ -67,6 +67,11 @@ pub enum Commands {
         )]
         args: Vec<String>,
     },
+    /// Git integration commands
+    Git {
+        #[command(subcommand)]
+        subcommand: GitSubcommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -75,6 +80,39 @@ pub enum ConfigAction {
     Show,
     /// Set a configuration value (format: <section>.<field>)
     Set { key: String, value: String },
+}
+
+#[derive(Subcommand)]
+pub enum GitSubcommand {
+    /// Show working tree status
+    Status,
+    /// Show diff of uncommitted changes
+    Diff,
+    /// Show staged diff
+    DiffStaged,
+    /// Show diff statistics (numstat)
+    DiffStat,
+    /// Show recent commits
+    Log {
+        #[arg(short, long, default_value_t = 10)]
+        count: usize,
+    },
+    /// Show file history
+    History {
+        #[arg(short, long, default_value_t = 10)]
+        count: usize,
+        /// File path (relative to project root)
+        path: String,
+    },
+    /// Show last commit for a file
+    Blame {
+        /// File path (relative to project root)
+        path: String,
+    },
+    /// Show current branch name
+    Branch,
+    /// Show if working tree is dirty
+    IsDirty,
 }
 
 #[derive(Parser)]
@@ -168,6 +206,19 @@ impl Cli {
                     }
                     idx.upsert_files(&result.files)?;
 
+                    {
+                        let git_client = git::GitClient::new(&project.root);
+                        if let Ok(client) = git_client {
+                            if client.is_repo() {
+                                if let Ok(commit) = client.short_commit_hash() {
+                                    for file in &result.files {
+                                        let _ = idx.update_git_metadata(&file.rel_path, Some(&commit));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let supported = [
                         "Python", "JavaScript", "TypeScript", "Rust", "Go",
                     ];
@@ -260,6 +311,19 @@ impl Cli {
                         }
                     }
                     idx.upsert_files(&result.files)?;
+
+                    {
+                        let git_client = git::GitClient::new(&project.root);
+                        if let Ok(client) = git_client {
+                            if client.is_repo() {
+                                if let Ok(commit) = client.short_commit_hash() {
+                                    for file in &result.files {
+                                        let _ = idx.update_git_metadata(&file.rel_path, Some(&commit));
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     let supported = [
                         "Python", "JavaScript", "TypeScript", "Rust", "Go",
@@ -487,7 +551,125 @@ impl Cli {
                   }
                   Ok(())
               }
-             Commands::Config { action } => {
+              Commands::Git { subcommand } => {
+                  let project = project::Project::discover()?;
+                  let client = git::GitClient::new(&project.root)?;
+
+                  if !client.is_repo() {
+                      println!("Not a Git repository: {}", project.root.display());
+                      return Ok(());
+                  }
+
+                  match subcommand {
+                      GitSubcommand::Status => {
+                          let entries = client.status()?;
+                          println!("Branch: {}", client.current_branch()?);
+                          println!("Dirty: {}", client.is_dirty()?);
+                          println!();
+                          if entries.is_empty() {
+                              println!("Working tree clean");
+                          } else {
+                              println!("Changes:");
+                              for e in &entries {
+                                  println!("  {} {}", e.status, e.path);
+                              }
+                              println!("\n{} file(s) changed", entries.len());
+                          }
+                          Ok(())
+                      }
+                      GitSubcommand::Diff => {
+                          let diff = client.diff()?;
+                          if diff.is_empty() {
+                              println!("No uncommitted changes");
+                          } else {
+                              println!("{}", diff);
+                          }
+                          Ok(())
+                      }
+                      GitSubcommand::DiffStaged => {
+                          let diff = client.diff_staged()?;
+                          if diff.is_empty() {
+                              println!("No staged changes");
+                          } else {
+                              println!("{}", diff);
+                          }
+                          Ok(())
+                      }
+                      GitSubcommand::DiffStat => {
+                          let entries = client.diff_stat()?;
+                          if entries.is_empty() {
+                              println!("No uncommitted changes");
+                          } else {
+                              println!("Diff statistics:");
+                              for e in &entries {
+                                  println!(
+                                      "  {:>6} {:<6} {} ({})",
+                                      format!("+{}", e.additions),
+                                      format!("-{}", e.deletions),
+                                      e.path,
+                                      e.status
+                                  );
+                              }
+                              println!("\n{} file(s) changed", entries.len());
+                          }
+                          Ok(())
+                      }
+                      GitSubcommand::Log { count } => {
+                          let commits = client.log(count)?;
+                          if commits.is_empty() {
+                              println!("No commits found");
+                          } else {
+                              println!("Recent commits:");
+                              for c in &commits {
+                                  println!("  {} {} <{}> - {}", c.short_hash, c.author, c.author_email, c.message);
+                                  println!("    {}", c.date);
+                              }
+                              println!("\n{} commit(s)", commits.len());
+                          }
+                          Ok(())
+                      }
+                      GitSubcommand::History { count, path } => {
+                          let commits = client.file_history(&path, count)?;
+                          if commits.is_empty() {
+                              println!("No history for '{}'", path);
+                          } else {
+                              println!("History for '{}':", path);
+                              for c in &commits {
+                                  println!("  {} {} <{}> - {}", c.short_hash, c.author, c.author_email, c.message);
+                                  println!("    {}", c.date);
+                              }
+                              println!("\n{} commit(s)", commits.len());
+                          }
+                          Ok(())
+                      }
+                      GitSubcommand::Blame { path } => {
+                          match client.file_last_commit(&path)? {
+                              Some(c) => {
+                                  println!("{}: last modified by {} <{}> at {}", path, c.author, c.author_email, c.date);
+                                  println!("  commit {} - {}", c.short_hash, c.message);
+                              }
+                              None => {
+                                  println!("No Git history for '{}'", path);
+                              }
+                          }
+                          Ok(())
+                      }
+                      GitSubcommand::Branch => {
+                          println!("{}", client.current_branch()?);
+                          Ok(())
+                      }
+                      GitSubcommand::IsDirty => {
+                          let dirty = client.is_dirty()?;
+                          if dirty {
+                              println!("Working tree is dirty");
+                          } else {
+                              println!("Working tree is clean");
+                          }
+                          Ok(())
+                      }
+                  }
+              }
+              Commands::Config { action } => {
                 let project = project::Project::discover()?;
                 let mut cfg = config::Config::load(&project)?;
                 match action {
