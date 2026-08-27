@@ -2,10 +2,9 @@
 
 ## Overview
 
-C.I.S. (Context & Intelligence System) is being migrated from a legacy Python implementation to a
+C.I.S. (Context & Intelligence System) was migrated from a legacy Python implementation to a
 Rust-first architecture. The Rust codebase is now the **primary and sole implementation**. The old
-Python analysis engine and React web UI are preserved as **legacy reference only** and must not be
-maintained as parallel implementations.
+Python analysis engine and React web UI have been **removed** from the working tree.
 
 ## Phase 0 Summary
 
@@ -40,54 +39,44 @@ C:\Users\Admin\Desktop\C.I.S\
 ├── C.I.S/               ← Legacy project folder (preserved, see below)
 ```
 
-### What Was Intentionally NOT Moved (Phase 0)
+### Legacy Code Removal
 
-Per the implementation plan, legacy code must not be moved or deleted in Phase 0. The following
-directories remain at their original nested location inside `C.I.S\C.I.S\`:
-
-| Path (relative to repo root)            | Description                                   | Status        |
-|-----------------------------------------|-----------------------------------------------|---------------|
-| `C.I.S\C.I.S\codebase_analyzer\`         | Legacy Python analysis engine + FastAPI server | Preserved     |
-| `C.I.S\C.I.S\codeintel_ui\`             | Legacy React/Vite web UI + FastAPI bridge     | Preserved     |
-| `C.I.S\C.I.S\.gitignore`                | Legacy gitignore (only `.env` patterns)       | Preserved     |
-| `C.I.S\C.I.S\README.md`                 | Legacy README referencing old `cis/` path     | Preserved     |
-| `C.I.S\C.I.S\.git\`                     | Git repository for the legacy project         | Preserved     |
-| `C.I.S\C.I.S\.cis\`                     | Runtime `.cis/` data from a prior scan        | Preserved     |
-
-These directories are **reference-only**. They must not be developed, extended, or maintained as a
-parallel implementation. The Rust codebase is the single source of truth going forward.
+The legacy Python codebase (`C.I.S/C.I.S/codebase_analyzer/`) and React web UI
+(`C.I.S/C.I.S/codeintel_ui/`) have been removed from the working tree. All Rust functionality is
+self-contained and has no dependency on the legacy code. Git history for the legacy code is
+preserved in the `C.I.S/C.I.S` submodule repository.
 
 ### Component Classification
 
 | Component                          | Classification | Notes                                                        |
 |------------------------------------|----------------|--------------------------------------------------------------|
-| `src/scanner/mod.rs`               | Rust (primary) | Replaces `backend/scanner.py` — Rust-native directory walker   |
-| `src/parser/`                      | Rust (primary) | Replaces `backend/dependency_analyzer.py` — regex-based      |
-| `src/index/mod.rs`                 | Rust (primary) | SQLite+FTS5 persistence (new, no Python equivalent)          |
-| `src/config/mod.rs`                | Rust (primary) | TOML config management (new, no Python equivalent)            |
-| `src/cli/mod.rs`                   | Rust (primary) | CLI entry point (new, no Python equivalent)                   |
-| `src/project/mod.rs`               | Rust (primary) | Project root detection + `.cis/` management (new)             |
-| `tests/integration_tests.rs`       | Rust (primary) | Integration tests (new)                                        |
-| `codebase_analyzer/backend/scanner.py`   | Reference    | Port ignore rules, language map, categorization to Rust      |
-| `codebase_analyzer/utils/file_handler.py` | Reference  | Port zip-slip protection pattern to Rust if needed            |
-| `codebase_analyzer/backend/dependency_analyzer.py` | Replaceable | Import extraction rewritten in Rust (`src/parser/`) |
-| `codebase_analyzer/backend/risk_engine.py` | Replaceable  | Weighted scoring logic to port if needed                      |
-| `codebase_analyzer/backend/graph_renderer.py` | Replaceable | Replace with Rust-native approach (Phase 5+)                 |
-| `codebase_analyzer/backend/execution_tracer.py` | Obsolete | Python-only; replaced by Rust terminal module (Phase 1)       |
-| `codebase_analyzer/ui/main_window.py` | Obsolete        | 838-line Textual monolith; replaced by CLI + future TUI      |
-| `codebase_analyzer/server.py`      | Broken          | Missing FastAPI/pydantic/py-dotenv deps; replaced by Rust CLI + MCP |
-| `codeintel_ui/src/App.jsx`         | Obsolete        | 40 KB+ monolithic React component; rewrite later               |
-| `codeintel_ui/server.py`           | Broken          | Broken `analyzer` import; no package.json deps for Python     |
-| `codebase_analyzer/ai/`            | Obsolete/Remove | NIM AI client; violates zero-AI core policy                    |
+| `src/scanner/mod.rs`               | Rust (primary) | Directory walker                              |
+| `src/parser/`                      | Rust (primary) | Regex-based import extraction                 |
+| `src/index/mod.rs`                 | Rust (primary) | SQLite+FTS5 persistence                       |
+| `src/config/mod.rs`                | Rust (primary) | TOML config management                        |
+| `src/cli/mod.rs`                   | Rust (primary) | CLI entry point                               |
+| `src/project/mod.rs`               | Rust (primary) | Project root detection + `.cis/` management   |
+| `tests/integration_tests.rs`       | Rust (primary) | Integration tests                             |
+| ~~`codebase_analyzer/backend/scanner.py`~~   | Removed (legacy) | Replaced by Rust `src/scanner/` (see below)    |
+| ~~`codebase_analyzer/utils/file_handler.py`~~ | Removed (legacy) | Port zip-slip protection (not needed in Rust) |
+| ~~`codebase_analyzer/backend/dependency_analyzer.py`~~ | Removed (legacy) | Replaced by `src/parser/` |
+| ~~`codebase_analyzer/backend/risk_engine.py`~~ | Removed (legacy) | Weighted scoring (future Rust port)         |
+| ~~`codebase_analyzer/backend/graph_renderer.py`~~ | Removed (legacy) | Replace with Rust-native approach      |
+| ~~`codebase_analyzer/backend/execution_tracer.py`~~ | Removed (legacy) | Replaced by Rust terminal module  |
+| ~~`codebase_analyzer/ui/main_window.py`~~ | Removed (legacy) | Replaced by CLI + future TUI          |
+| ~~`codebase_analyzer/server.py`~~ | Removed (legacy) | Replaced by Rust CLI + MCP server         |
+| ~~`codeintel_ui/src/App.jsx`~~     | Removed (legacy) | Rewrite deferred to Phase 12                |
+| ~~`codeintel_ui/server.py`~~       | Removed (legacy) | Broken; replaced by Rust CLI + MCP          |
+| ~~`codebase_analyzer/ai/`~~        | Removed (legacy) | NIM AI client; replaced by MCP integration |
 
-### What Was Intentionally NOT Migrated
+### Legacy Code Replaced
 
-Per the zero-AI core principle, the following were deliberately excluded:
+Per the zero-AI core principle, the following legacy components were **replaced** by Rust:
 
 - **AI client modules** (`codebase_analyzer/ai/nim_client.py`, `prompt_engine.py`, `context_builder.py`):
-  These embed an NVIDIA NIM AI client. The Rust core does not include any AI model or API client.
-  External AI integration happens only via MCP (Phase 9).
-- **React web UI** (`codeintel_ui/src/`): The UI is deferred to Phase 12. Future UI options include
+  These embedded an NVIDIA NIM AI client. The Rust core has zero AI dependencies. External AI
+  integration is handled via MCP (Phase 9).
+- **React web UI** (`codeintel_ui/src/`): Deferred to Phase 12. Future UI options include
   a terminal TUI (ratatui), a new web app, or a Tauri desktop app — all of which consume deterministic
   core data rather than replacing it.
 - **FastAPI server** (`codebase_analyzer/server.py`, `codeintel_ui/server.py`): Replaced by the Rust
@@ -118,4 +107,4 @@ the existing `.git` directory is deferred to the user.
 - `.cisignore` — created at the repository root with sensible default patterns.
 - `.cisignore` patterns verified: scanner skips `.git/`, `.cis/`, `target/`, `node_modules/`,
   `__pycache__/`, `venv/`, `.venv/`, `dist/`, `build/`, `out/`, and other common directories.
-- Legacy Python/UI directories — confirmed untouched and intact.
+- Legacy Python/UI directories — **removed** from the working tree. All functionality replaced by Rust C.I.S.

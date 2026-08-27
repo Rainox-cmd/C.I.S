@@ -1,9 +1,8 @@
-# Known Issues — Legacy Python/UI Implementation
+# Known Issues — Legacy Python/UI Implementation (Historical)
 
 This document records issues discovered during the Phase 0 audit of the legacy Python and React
-implementations. These issues are documented for historical reference only. Per the implementation
-plan, legacy bugs are **not fixed** in Phase 0. The Rust codebase is the primary implementation
-going forward.
+implementations. The legacy code has since been **removed** from the working tree; this document is
+preserved for historical reference only. The Rust codebase is the sole implementation going forward.
 
 ---
 
