@@ -7,7 +7,7 @@ use crate::{config, context, diagnostics, git, index, memory, mcp, parser, proje
 #[derive(Parser)]
 #[command(name = "cis")]
 #[command(about = "C.I.S. - Codebase Intelligence System")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

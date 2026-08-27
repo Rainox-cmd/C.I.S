@@ -9,11 +9,15 @@ mod git;
 mod index;
 mod memory;
 #[allow(dead_code)]
+mod migration;
+#[allow(dead_code)]
 mod mcp;
 mod parser;
 mod project;
 #[allow(dead_code)]
 mod context;
+#[allow(dead_code)]
+mod release;
 #[allow(dead_code)]
 mod scanner;
 #[allow(dead_code, unused_imports)]
