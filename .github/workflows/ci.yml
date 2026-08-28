@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TARGET_DIR: build_cache
+  RUST_BACKTRACE: 1
 
 jobs:
   test:
@@ -26,15 +27,6 @@ jobs:
       - name: Show Rust version
         run: rustc --version
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
       - name: Build
         run: cargo build
 
@@ -44,7 +36,7 @@ jobs:
           git config --global user.email "ci@cis.local"
 
       - name: Run unit tests
-        run: cargo test --bins
+        run: cargo test --bins -- --test-threads=4
 
   lint:
     name: Lint
@@ -54,14 +46,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Show Rust version
         run: rustc --version
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-clippy-
       - name: Run clippy
         run: cargo clippy --all-targets -- -D warnings
 
@@ -105,7 +89,6 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           mkdir -p release
-          # Create minimal RPM spec
           echo "cargo build succeeded" > release/artifact.txt
           tar -czf ${{ matrix.artifact }} -C release .
       - name: Package (Windows MSI)
