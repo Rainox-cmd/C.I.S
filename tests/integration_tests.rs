@@ -542,6 +542,8 @@ fn test_cis_deps_shows_direct_dependencies() {
     let utils_py = project_dir.child("utils.py");
     utils_py.write_str("def helper():\n    pass\n").unwrap();
 
+    project_dir.child("Cargo.toml").touch().unwrap();
+
     init_project(&project_dir);
     let scan_output = run_scan(&project_dir, false);
     assert!(scan_output.contains("Scan complete"));
@@ -567,6 +569,8 @@ fn test_cis_impact_shows_affected_files() {
     project_dir.child("utils.py").write_str("import config\n\ndef helper():\n    pass\n").unwrap();
     project_dir.child("config.py").write_str("DEBUG = True\n").unwrap();
 
+    project_dir.child("Cargo.toml").touch().unwrap();
+
     init_project(&project_dir);
     run_scan(&project_dir, false);
 
@@ -589,6 +593,8 @@ fn test_cis_entry_points() {
 
     project_dir.child("main.py").write_str("import utils\n").unwrap();
     project_dir.child("utils.py").write_str("def helper():\n    pass\n").unwrap();
+
+    project_dir.child("Cargo.toml").touch().unwrap();
 
     init_project(&project_dir);
     run_scan(&project_dir, false);
@@ -614,6 +620,8 @@ fn test_cis_cycles() {
     project_dir.child("a.py").write_str("import b\n").unwrap();
     project_dir.child("b.py").write_str("import a\n").unwrap();
 
+    project_dir.child("Cargo.toml").touch().unwrap();
+
     init_project(&project_dir);
     run_scan(&project_dir, false);
 
@@ -637,6 +645,8 @@ fn test_cis_deps_transitive() {
     project_dir.child("a.py").write_str("import b\n").unwrap();
     project_dir.child("b.py").write_str("import c\n").unwrap();
     project_dir.child("c.py").write_str("value = 42\n").unwrap();
+
+    project_dir.child("Cargo.toml").touch().unwrap();
 
     init_project(&project_dir);
     run_scan(&project_dir, false);

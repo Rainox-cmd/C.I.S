@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod parser_tests {
     use crate::parser::go::GoParser;
     use crate::parser::javascript::JavaScriptParser;
     use crate::parser::python::PythonParser;
@@ -67,12 +67,12 @@ from .utils import helper
         let result = PythonParser.parse(std::path::Path::new("test.py"), content);
         assert_eq!(result.imports[0].line, 1);
         assert_eq!(result.imports[0].path, "os");
-        assert_eq!(result.imports[0].is_relative, false);
+        assert!(!result.imports[0].is_relative);
         assert_eq!(result.imports[1].line, 2);
         assert_eq!(result.imports[1].path, "sys");
         assert_eq!(result.imports[2].line, 3);
         assert_eq!(result.imports[2].path, ".local");
-        assert_eq!(result.imports[2].is_relative, true);
+        assert!(result.imports[2].is_relative);
     }
 
     #[test]
@@ -326,7 +326,7 @@ trait Debug {}
         assert_eq!(result.imports.len(), 1);
         assert_eq!(result.imports[0].path, "std::io");
         assert_eq!(result.imports[0].line, 1);
-        assert_eq!(result.imports[0].is_relative, false);
+        assert!(!result.imports[0].is_relative);
         assert_eq!(result.symbols.len(), 4);
         assert_eq!(result.symbols[0].name, "greet");
         assert_eq!(result.symbols[0].line, 2);
