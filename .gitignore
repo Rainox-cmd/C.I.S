@@ -2,6 +2,9 @@
 /target/
 **/target/
 
+# CI build cache (not committed, cached via GitHub Actions)
+build_cache/
+
 # C.I.S runtime data
 /.cis/
 
