@@ -445,5 +445,5 @@ fn test_mcp_run_command_tool_blocked() {
     let resp = server.process_request(&req);
     assert!(resp.error.is_none());
     let result = resp.result.unwrap();
-    assert!(result["content"][0]["data"]["result"].as_str().unwrap().contains("security policy"));
+    assert!(result["content"][0]["data"]["blocked"].as_bool().unwrap());
 }

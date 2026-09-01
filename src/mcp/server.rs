@@ -30,13 +30,13 @@ impl McpServer {
         let mut registry = ToolRegistry::new();
 
         registry.register(Box::new(ProjectOverviewTool::new(&project)));
-        registry.register(Box::new(SearchTool::new()));
-        registry.register(Box::new(FileContextTool::new(&project)));
-        registry.register(Box::new(SymbolContextTool::new()));
-        registry.register(Box::new(DependencyContextTool::new()));
-        registry.register(Box::new(ImpactAnalysisTool::new()));
+        registry.register(Box::new(SearchTool::new(&project, &config)));
+        registry.register(Box::new(FileContextTool::new(&project, &config)));
+        registry.register(Box::new(SymbolContextTool::new(&project, &config)));
+        registry.register(Box::new(DependencyContextTool::new(&project, &config)));
+        registry.register(Box::new(ImpactAnalysisTool::new(&project, &config)));
         registry.register(Box::new(MemoryContextTool::new(&project, &config)));
-        registry.register(Box::new(SessionContextTool::new(&project)));
+        registry.register(Box::new(SessionContextTool::new(&project, &config)));
         registry.register(Box::new(GitContextTool::new(&project)));
         registry.register(Box::new(DiagnosticsTool::new(&project, &config, &index)));
         registry.register(Box::new(RunCommandTool::new(&project, &config)));
@@ -182,9 +182,12 @@ impl ToolHandler for ProjectOverviewTool {
     }
 }
 
-pub struct SearchTool;
+pub struct SearchTool {
+    project: Project,
+    config: Config,
+}
 impl SearchTool {
-    pub fn new() -> Self { Self }
+    pub fn new(project: &Project, config: &Config) -> Self { Self { project: project.clone(), config: config.clone() } }
 }
 impl ToolHandler for SearchTool {
     fn name(&self) -> &str { "search" }
@@ -202,19 +205,39 @@ impl ToolHandler for SearchTool {
             message: "Missing required parameter: query".to_string(),
             data: None,
         })?;
+        let index = Index::open(&self.project, &self.config).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Failed to open index: {}", e),
+            data: None,
+        })?;
+        let results = index.search(query).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Search failed: {}", e),
+            data: None,
+        })?;
+        
+        let json_results: Vec<_> = results.into_iter().map(|r| json!({
+            "rel_path": r.rel_path,
+            "name": r.name,
+            "symbol_type": r.symbol_type,
+            "line": r.line,
+            "rank": r.rank
+        })).collect();
+
         Ok(McpToolResult {
-            content: vec![McpContent::Text(format!("Search result for: {}", query))],
+            content: vec![McpContent::Json(json!(json_results))],
             is_error: vec![false],
         })
     }
 }
 
 pub struct FileContextTool {
-    project_root: String,
+    project: Project,
+    config: Config,
 }
 impl FileContextTool {
-    pub fn new(project: &Project) -> Self {
-        Self { project_root: project.root.to_string_lossy().to_string() }
+    pub fn new(project: &Project, config: &Config) -> Self {
+        Self { project: project.clone(), config: config.clone() }
     }
 }
 impl ToolHandler for FileContextTool {
@@ -229,16 +252,46 @@ impl ToolHandler for FileContextTool {
             message: "Missing required parameter: path".to_string(),
             data: None,
         })?;
+        
+        let index = Index::open(&self.project, &self.config).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Failed to open index: {}", e),
+            data: None,
+        })?;
+
+        let symbols = index.get_symbols_by_file(path).unwrap_or_default();
+        let dependencies = index.get_dependencies(path).unwrap_or_default();
+        
+        let abs_path = self.project.root.join(path);
+        let content = std::fs::read_to_string(&abs_path).unwrap_or_else(|_| "".to_string());
+        
+        let json_symbols: Vec<_> = symbols.into_iter().map(|s| json!({
+            "name": s.name,
+            "type": s.symbol_type,
+            "line": s.line,
+            "column": s.column
+        })).collect();
+        
+        let json_deps: Vec<_> = dependencies.into_iter().map(|d| d.target_file).collect();
+
         Ok(McpToolResult {
-            content: vec![McpContent::Text(format!("File context for: {}", path))],
+            content: vec![McpContent::Json(json!({
+                "path": path,
+                "symbols": json_symbols,
+                "dependencies": json_deps,
+                "content_preview": content.chars().take(1000).collect::<String>()
+            }))],
             is_error: vec![false],
         })
     }
 }
 
-pub struct SymbolContextTool;
+pub struct SymbolContextTool {
+    project: Project,
+    config: Config,
+}
 impl SymbolContextTool {
-    pub fn new() -> Self { Self }
+    pub fn new(project: &Project, config: &Config) -> Self { Self { project: project.clone(), config: config.clone() } }
 }
 impl ToolHandler for SymbolContextTool {
     fn name(&self) -> &str { "symbol_context" }
@@ -252,16 +305,43 @@ impl ToolHandler for SymbolContextTool {
             message: "Missing required parameter: symbol".to_string(),
             data: None,
         })?;
+        
+        let index = Index::open(&self.project, &self.config).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Failed to open index: {}", e),
+            data: None,
+        })?;
+
+        let symbols = index.find_symbols_by_name(symbol).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Failed to find symbols: {}", e),
+            data: None,
+        })?;
+
+        let json_symbols: Vec<_> = symbols.into_iter().map(|s| json!({
+            "name": s.name,
+            "type": s.symbol_type,
+            "file": s.rel_path,
+            "line": s.line,
+            "column": s.column
+        })).collect();
+
         Ok(McpToolResult {
-            content: vec![McpContent::Text(format!("Symbol context for: {}", symbol))],
+            content: vec![McpContent::Json(json!({
+                "symbol": symbol,
+                "locations": json_symbols
+            }))],
             is_error: vec![false],
         })
     }
 }
 
-pub struct DependencyContextTool;
+pub struct DependencyContextTool {
+    project: Project,
+    config: Config,
+}
 impl DependencyContextTool {
-    pub fn new() -> Self { Self }
+    pub fn new(project: &Project, config: &Config) -> Self { Self { project: project.clone(), config: config.clone() } }
 }
 impl ToolHandler for DependencyContextTool {
     fn name(&self) -> &str { "dependency_context" }
@@ -276,16 +356,36 @@ impl ToolHandler for DependencyContextTool {
             data: None,
         })?;
         let transitive = params.get("transitive").and_then(|v| v.as_bool()).unwrap_or(false);
+        
+        let index = Index::open(&self.project, &self.config).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Failed to open index: {}", e),
+            data: None,
+        })?;
+
+        let deps = if transitive {
+            index.get_transitive_dependencies(path).unwrap_or_default()
+        } else {
+            index.get_dependencies(path).unwrap_or_default().into_iter().map(|d| d.target_file).collect()
+        };
+
         Ok(McpToolResult {
-            content: vec![McpContent::Text(format!("Dependencies for '{}' (transitive: {})", path, transitive))],
+            content: vec![McpContent::Json(json!({
+                "path": path,
+                "transitive": transitive,
+                "dependencies": deps
+            }))],
             is_error: vec![false],
         })
     }
 }
 
-pub struct ImpactAnalysisTool;
+pub struct ImpactAnalysisTool {
+    project: Project,
+    config: Config,
+}
 impl ImpactAnalysisTool {
-    pub fn new() -> Self { Self }
+    pub fn new(project: &Project, config: &Config) -> Self { Self { project: project.clone(), config: config.clone() } }
 }
 impl ToolHandler for ImpactAnalysisTool {
     fn name(&self) -> &str { "impact_analysis" }
@@ -299,8 +399,20 @@ impl ToolHandler for ImpactAnalysisTool {
             message: "Missing required parameter: path".to_string(),
             data: None,
         })?;
+        
+        let index = Index::open(&self.project, &self.config).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Failed to open index: {}", e),
+            data: None,
+        })?;
+
+        let impact = index.get_reverse_dependencies(path).unwrap_or_default();
+
         Ok(McpToolResult {
-            content: vec![McpContent::Text(format!("Impact analysis for: {}", path))],
+            content: vec![McpContent::Json(json!({
+                "path": path,
+                "affected_files": impact
+            }))],
             is_error: vec![false],
         })
     }
@@ -328,13 +440,35 @@ impl ToolHandler for MemoryContextTool {
         let scope = params.get("scope").and_then(|v| v.as_str()).unwrap_or("project");
         let key = params.get("key").and_then(|v| v.as_str());
         let session_id = params.get("session_id").and_then(|v| v.as_str());
+        
+        let mm = crate::memory::MemoryManager::new(&self.project, &self.config.context).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Memory manager error: {}", e),
+            data: None,
+        })?;
+
+        let result = if scope == "session" {
+            if let (Some(sid), Some(k)) = (session_id, key) {
+                let val = mm.session_get(sid, k).unwrap_or(None);
+                json!({"entry": val})
+            } else if let Some(sid) = session_id {
+                let list = mm.session_list(sid).unwrap_or_default();
+                json!({"entries": list})
+            } else {
+                json!({"error": "session_id required for session scope"})
+            }
+        } else {
+            if let Some(k) = key {
+                let val = mm.project_get(k).unwrap_or(None);
+                json!({"entry": val})
+            } else {
+                let list = mm.project_list().unwrap_or_default();
+                json!({"entries": list})
+            }
+        };
+
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
-                "scope": scope,
-                "key": key,
-                "session_id": session_id,
-                "project_memory_dir": self.project.project_memory_dir.to_string_lossy().to_string(),
-            }))],
+            content: vec![McpContent::Json(result)],
             is_error: vec![false],
         })
     }
@@ -342,10 +476,11 @@ impl ToolHandler for MemoryContextTool {
 
 pub struct SessionContextTool {
     project: Project,
+    config: Config,
 }
 impl SessionContextTool {
-    pub fn new(project: &Project) -> Self {
-        Self { project: project.clone() }
+    pub fn new(project: &Project, config: &Config) -> Self {
+        Self { project: project.clone(), config: config.clone() }
     }
 }
 impl ToolHandler for SessionContextTool {
@@ -357,12 +492,28 @@ impl ToolHandler for SessionContextTool {
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let session_id = params.get("session_id").and_then(|v| v.as_str()).unwrap_or("default");
         let action = params.get("action").and_then(|v| v.as_str()).unwrap_or("list");
+        
+        let mm = crate::memory::MemoryManager::new(&self.project, &self.config.context).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Memory manager error: {}", e),
+            data: None,
+        })?;
+
+        let result = match action {
+            "list" => {
+                let list = mm.session_list(session_id).unwrap_or_default();
+                json!({"entries": list})
+            }
+            "delete" => {
+                let key = params.get("key").and_then(|v| v.as_str()).unwrap_or("");
+                let deleted = mm.session_delete(session_id, key).unwrap_or(false);
+                json!({"deleted": deleted})
+            }
+            _ => json!({"error": format!("Unknown action: {}", action)})
+        };
+
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
-                "session_id": session_id,
-                "action": action,
-                "sessions_dir": self.project.sessions_dir.to_string_lossy().to_string(),
-            }))],
+            content: vec![McpContent::Json(result)],
             is_error: vec![false],
         })
     }
@@ -385,12 +536,41 @@ impl ToolHandler for GitContextTool {
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let file_path = params.get("path").and_then(|v| v.as_str());
         let include_diff = params.get("include_diff").and_then(|v| v.as_bool()).unwrap_or(false);
+        
+        let git = crate::git::GitClient::new(&self.project.root).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Git init error: {}", e),
+            data: None,
+        })?;
+
+        if !git.is_repo() {
+            return Ok(McpToolResult {
+                content: vec![McpContent::Json(json!({"error": "Not a git repository"}))],
+                is_error: vec![true],
+            });
+        }
+
+        let mut result = json!({});
+        
+        if let Some(path) = file_path {
+            if let Ok(history) = git.file_history(path, 10) {
+                result["history"] = json!(history.into_iter().map(|c| json!({
+                    "hash": c.short_hash,
+                    "author": c.author,
+                    "date": c.date,
+                    "message": c.message
+                })).collect::<Vec<_>>());
+            }
+        } else {
+            result["branch"] = json!(git.current_branch().unwrap_or_default());
+            result["status"] = json!(git.status().unwrap_or_default().into_iter().map(|s| json!({"path": s.path, "status": s.status})).collect::<Vec<_>>());
+            if include_diff {
+                result["diff"] = json!(git.diff().unwrap_or_default());
+            }
+        }
+
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
-                "file_path": file_path,
-                "include_diff": include_diff,
-                "project_root": self.project.root.to_string_lossy().to_string(),
-            }))],
+            content: vec![McpContent::Json(result)],
             is_error: vec![false],
         })
     }
@@ -415,11 +595,32 @@ impl ToolHandler for DiagnosticsTool {
         Some(McpTool { name: "diagnostics".to_string(), description: "Run health checks and return diagnostic results".to_string(), input_schema: None })
     }
     fn execute(&self, _params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
+        let index = Index::open(&self.project, &self.config).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Failed to open index: {}", e),
+            data: None,
+        })?;
+        
+        let report = crate::diagnostics::run_all_checks(&self.project, &self.config, &index);
+        
+        let checks: Vec<_> = report.checks.into_iter().map(|c| json!({
+            "name": c.name,
+            "health": match c.health {
+                crate::diagnostics::Health::Pass => "PASS",
+                crate::diagnostics::Health::Warn => "WARN",
+                crate::diagnostics::Health::Fail => "FAIL",
+            },
+            "message": c.message,
+            "details": c.details
+        })).collect();
+
         Ok(McpToolResult {
             content: vec![McpContent::Json(json!({
-                "checks": vec!["project_root", "cis_dir", "config_validity", "database"],
+                "is_healthy": report.is_healthy(),
+                "has_warnings": report.has_warnings(),
+                "checks": checks,
             }))],
-            is_error: vec![false],
+            is_error: vec![!report.is_healthy()],
         })
     }
 }
@@ -454,14 +655,35 @@ impl ToolHandler for RunCommandTool {
             .unwrap_or_default();
         let skip_confirmation = params.get("skip_confirmation").and_then(|v| v.as_bool()).unwrap_or(false);
 
+        let executor = crate::terminal::executor::TerminalExecutor::from_config(
+            self.project.root.clone(),
+            self.project.logs_dir.clone(),
+            &self.config
+        );
+
+        let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+        let result = executor.execute(command, &str_args, None, skip_confirmation).map_err(|e| JsonRpcError {
+            code: -32603,
+            message: format!("Command execution failed: {}", e),
+            data: None,
+        })?;
+
+        let is_err = result.blocked || result.requires_confirmation || result.exit_code != 0 || result.timed_out;
+
         Ok(McpToolResult {
             content: vec![McpContent::Json(json!({
-                "command": command,
-                "args": args,
-                "skip_confirmation": skip_confirmation,
-                "result": "Command would be executed with security policy enforcement",
+                "command": result.command,
+                "args": result.args,
+                "exit_code": result.exit_code,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "blocked": result.blocked,
+                "requires_confirmation": result.requires_confirmation,
+                "timed_out": result.timed_out,
+                "block_reason": result.block_reason,
             }))],
-            is_error: vec![false],
+            is_error: vec![is_err],
         })
     }
 }
