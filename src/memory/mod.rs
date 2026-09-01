@@ -396,26 +396,27 @@ impl MemoryManager {
     fn is_session_expired(&self, session_dir: &PathBuf, now: u64) -> Result<bool> {
         let ttl = self.config.session_ttl_seconds;
         let mut found_any = false;
+        let mut latest_activity: u64 = 0;
+
         for entry in fs::read_dir(session_dir)? {
             let entry = entry?;
             if entry.path().extension().and_then(|e| e.to_str()) == Some("json") {
                 let content = fs::read_to_string(entry.path())?;
-                let entry: MemoryEntry = serde_json::from_str(&content)?;
+                let mem_entry: MemoryEntry = serde_json::from_str(&content)?;
                 found_any = true;
-                if let Some(expires) = entry.expires_at {
-                    if now > expires {
-                        return Ok(true);
-                    }
-                }
-                let entry_age = now.saturating_sub(entry.created_at);
-                if entry_age > ttl {
-                    return Ok(true);
-                }
+                
+                latest_activity = latest_activity.max(mem_entry.updated_at).max(mem_entry.created_at);
             }
         }
         if !found_any {
             return Ok(true);
         }
+        
+        let session_age = now.saturating_sub(latest_activity);
+        if session_age > ttl {
+            return Ok(true);
+        }
+        
         Ok(false)
     }
 

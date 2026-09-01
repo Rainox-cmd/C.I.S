@@ -152,10 +152,15 @@ fn test_memory_storage_limits_config() {
 
 #[test]
 fn test_memory_export_before_delete() {
-    let (_dir, _project, _cfg, memory) = setup();
+    let dir = tempdir().unwrap();
+    let project = Project::new(dir.path().to_path_buf()).unwrap();
+    project.init().unwrap();
+    let mut config = Config::default();
+    config.context.session_ttl_seconds = 1;
+    let memory = MemoryManager::new(&project, &config.context).unwrap();
 
-    memory.session_set("sess1", "key1", "value1", Provenance::Detected, Some(1), vec![]).unwrap();
-    memory.session_set("sess1", "key2", "value2", Provenance::Detected, Some(1), vec![]).unwrap();
+    memory.session_set("sess1", "key1", "value1", Provenance::Detected, None, vec![]).unwrap();
+    memory.session_set("sess1", "key2", "value2", Provenance::Detected, None, vec![]).unwrap();
 
     std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -245,15 +250,69 @@ fn test_memory_check_limits() {
 
 #[test]
 fn test_memory_session_ttl() {
-    let (_dir, _project, _cfg, memory) = setup();
+    let dir = tempdir().unwrap();
+    let project = Project::new(dir.path().to_path_buf()).unwrap();
+    project.init().unwrap();
+    let mut config = Config::default();
+    config.context.session_ttl_seconds = 1;
+    let memory = MemoryManager::new(&project, &config.context).unwrap();
 
-    memory.session_set("sess1", "task", "work", Provenance::Detected, Some(1), vec![]).unwrap();
+    memory.session_set("sess1", "task", "work", Provenance::Detected, None, vec![]).unwrap();
 
     assert!(memory.session_get("sess1", "task").unwrap().is_some());
 
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     assert!(memory.session_get("sess1", "task").unwrap().is_none());
+}
+
+#[test]
+fn test_memory_session_does_not_expire_on_single_entry() {
+    let (_dir, _project, _cfg, memory) = setup();
+
+    memory.session_set("sess1", "temp", "short-lived", Provenance::Detected, Some(1), vec![]).unwrap();
+    memory.session_set("sess1", "perm", "long-lived", Provenance::Detected, None, vec![]).unwrap();
+
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // The temporary entry should expire on access
+    assert!(memory.session_get("sess1", "temp").unwrap().is_none());
+    
+    // The permanent entry should remain
+    assert!(memory.session_get("sess1", "perm").unwrap().is_some());
+
+    // The session should NOT be in expired sessions
+    let expired = memory.expired_sessions().unwrap();
+    assert!(expired.is_empty(), "Session expired incorrectly due to a single entry");
+
+    // Pruning should not delete the session
+    let pruned = memory.prune_expired_sessions().unwrap();
+    assert!(pruned.is_empty());
+}
+
+#[test]
+fn test_memory_recent_activity_keeps_session_alive() {
+    let dir = tempdir().unwrap();
+    let project = Project::new(dir.path().to_path_buf()).unwrap();
+    project.init().unwrap();
+    let mut config = Config::default();
+    config.context.session_ttl_seconds = 2; // 2 seconds ttl
+    let memory = MemoryManager::new(&project, &config.context).unwrap();
+
+    memory.session_set("sess3", "old", "data", Provenance::Detected, None, vec![]).unwrap();
+
+    // Wait 1 second (not enough to expire the session)
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    // Add new activity
+    memory.session_set("sess3", "new", "data", Provenance::Detected, None, vec![]).unwrap();
+
+    // Wait 1.5 seconds. 
+    // By the "new" entry, it is only 1.5s old, which < 2s TTL, so it should NOT expire.
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+
+    let expired = memory.expired_sessions().unwrap();
+    assert!(expired.is_empty(), "Session expired despite recent activity");
 }
 
 #[test]
