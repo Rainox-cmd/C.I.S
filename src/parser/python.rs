@@ -97,32 +97,34 @@ impl LanguageParser for PythonParser {
                 let mut path = String::new();
                 let mut is_relative = false;
                 
-                let mut relative_dots = 0;
-                for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
-                        if child.kind() == "." {
-                            relative_dots += 1;
-                            is_relative = true;
-                        }
-                    }
-                }
-                
                 let module_name_node = node.child_by_field_name("module_name");
                 if let Some(mn) = module_name_node {
                     if let Ok(mn_text) = mn.utf8_text(content.as_bytes()) {
                         path = mn_text.to_string();
+                        if path.starts_with('.') || mn.kind() == "relative_import" {
+                            is_relative = true;
+                        }
+                    }
+                } else {
+                    for i in 0..node.child_count() {
+                        if let Some(child) = node.child(i) {
+                            if child.kind() == "relative_import" || child.kind() == "import_prefix" || child.kind() == "." {
+                                is_relative = true;
+                                if let Ok(text) = child.utf8_text(content.as_bytes()) {
+                                    path.push_str(text);
+                                }
+                            } else if child.kind() == "dotted_name" {
+                                if let Ok(text) = child.utf8_text(content.as_bytes()) {
+                                    path.push_str(text);
+                                }
+                            }
+                        }
                     }
                 }
                 
-                let mut final_path = String::new();
-                for _ in 0..relative_dots {
-                    final_path.push('.');
-                }
-                final_path.push_str(&path);
-                
-                if !final_path.is_empty() {
+                if !path.is_empty() {
                     result.imports.push(Import {
-                        path: final_path,
+                        path,
                         is_relative,
                         line: (node.start_position().row + 1) as u32,
                         column: node.start_position().column as u32,
