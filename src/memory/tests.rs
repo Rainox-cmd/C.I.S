@@ -154,18 +154,27 @@ fn test_memory_storage_limits_config() {
 fn test_memory_export_before_delete() {
     let (_dir, _project, _cfg, memory) = setup();
 
-    memory.session_set("sess1", "key1", "value1", Provenance::Detected, None, vec![]).unwrap();
-    memory.session_set("sess1", "key2", "value2", Provenance::Detected, None, vec![]).unwrap();
+    memory.session_set("sess1", "key1", "value1", Provenance::Detected, Some(1), vec![]).unwrap();
+    memory.session_set("sess1", "key2", "value2", Provenance::Detected, Some(1), vec![]).unwrap();
+
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     let expired = memory.expired_sessions().unwrap();
     assert_eq!(expired.len(), 1);
-    assert_eq!(expired[0], "ses1");
+    assert_eq!(expired[0], "sess1");
 
     let pruned = memory.prune_expired_sessions().unwrap();
     assert_eq!(pruned.len(), 1);
+    assert_eq!(pruned[0], "sess1");
 
     let sessions = memory.list_sessions().unwrap();
     assert!(sessions.is_empty());
+
+    let archive_path = _project.cache_dir.join("deleted_sessions").join("session-sess1.tar");
+    assert!(archive_path.exists());
+    let archive_content = fs::read_to_string(&archive_path).unwrap();
+    let archived_entries: Vec<MemoryEntry> = serde_json::from_str(&archive_content).unwrap();
+    assert_eq!(archived_entries.len(), 2);
 }
 
 #[test]

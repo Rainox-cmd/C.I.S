@@ -435,7 +435,18 @@ impl MemoryManager {
         let export_dir = self.project.cache_dir.join("deleted_sessions");
         fs::create_dir_all(&export_dir)?;
         let archive_path = export_dir.join(format!("session-{}.tar", session_id));
-        let entries = self.session_list(session_id)?;
+        let mut entries = Vec::new();
+        if session_dir.exists() {
+            for entry in fs::read_dir(session_dir)? {
+                let entry = entry?;
+                if entry.path().extension().and_then(|e| e.to_str()) == Some("json") {
+                    let content = fs::read_to_string(entry.path())?;
+                    let entry: MemoryEntry = serde_json::from_str(&content)?;
+                    entries.push(entry);
+                }
+            }
+            entries.sort_by(|a, b| a.key.cmp(&b.key));
+        }
         let archive_content = serde_json::to_string_pretty(&entries)
             .context("Failed to serialize session for archive")?;
         fs::write(&archive_path, archive_content)?;
