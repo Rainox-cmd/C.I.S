@@ -13,12 +13,13 @@ use super::jsonrpc::{
 };
 use super::tools::{ToolHandler, ToolRegistry};
 use super::budget::ContextBudget;
+use std::sync::Mutex;
 
 pub struct McpServer {
     project: Project,
     config: Config,
     index: Index,
-    budget: ContextBudget,
+    budget: Mutex<ContextBudget>,
     registry: ToolRegistry,
 }
 
@@ -26,7 +27,7 @@ impl McpServer {
     pub fn new(project: Project, config: Config) -> anyhow::Result<Self> {
         let index = Index::open(&project, &config)
             .context("Failed to open index for MCP server")?;
-        let budget = ContextBudget::new(config.context.clone());
+        let budget = Mutex::new(ContextBudget::new(config.context.clone()));
         let mut registry = ToolRegistry::new();
 
         registry.register(Box::new(ProjectOverviewTool::new(&project)));
@@ -83,7 +84,21 @@ impl McpServer {
                     Some(tool) => {
                         match tool.execute(&arguments) {
                             Ok(result) => {
-                                        JsonRpcResponse::success(req.id, req.id_str.clone(), serde_json::to_value(result).unwrap_or(serde_json::Value::Null))
+                                let result_val = serde_json::to_value(&result).unwrap_or(serde_json::Value::Null);
+                                let result_str = serde_json::to_string(&result_val).unwrap_or_default();
+                                let size = result_str.len() as u64;
+
+                                let mut budget = self.budget.lock().unwrap();
+                                if !budget.allocate(size) {
+                                    return JsonRpcResponse::error(
+                                        req.id,
+                                        req.id_str.clone(),
+                                        -32603,
+                                        format!("Context budget exceeded. Payload size {} bytes exceeds remaining budget {} bytes", size, budget.remaining_bytes())
+                                    );
+                                }
+                                
+                                JsonRpcResponse::success(req.id, req.id_str.clone(), result_val)
                             }
                             Err(e) => {
                                 JsonRpcResponse::error(req.id, req.id_str.clone(), e.code, e.message)
@@ -140,7 +155,7 @@ impl McpServer {
         &self.registry
     }
 
-    pub fn budget(&self) -> &ContextBudget {
+    pub fn budget(&self) -> &Mutex<ContextBudget> {
         &self.budget
     }
 }

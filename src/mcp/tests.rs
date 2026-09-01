@@ -447,3 +447,88 @@ fn test_mcp_run_command_tool_blocked() {
     let result = resp.result.unwrap();
     assert!(result["content"][0]["data"]["blocked"].as_bool().unwrap());
 }
+
+#[test]
+fn test_mcp_context_budget_enforced_in_process_request() {
+    let (_dir, project) = setup();
+    let mut cfg = Config::default();
+    // Set a very small budget so standard responses fail
+    cfg.context.max_session_context_bytes = 100;
+    
+    let server = McpServer::new(project.clone(), cfg.clone()).unwrap();
+
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(100),
+        id_str: None,
+        method: "tools/call".to_string(),
+        // project_overview returns slightly more than 100 bytes of JSON
+        params: Some(json!({"name": "project_overview", "arguments": {}})),
+    };
+
+    let resp = server.process_request(&req);
+    // It should be cleanly rejected
+    assert!(resp.error.is_some());
+    let err = resp.error.unwrap();
+    assert_eq!(err.code, -32603);
+    assert!(err.message.contains("budget exceeded"));
+    
+    // Check that accounting was not corrupted (usage should be 0 because the allocation failed)
+    let budget = server.budget().lock().unwrap();
+    assert_eq!(budget.usage(), 0);
+}
+
+#[test]
+fn test_mcp_context_budget_success() {
+    let (_dir, project) = setup();
+    let mut cfg = Config::default();
+    cfg.context.max_session_context_bytes = 1024 * 1024; // 1 MB
+    
+    let server = McpServer::new(project.clone(), cfg.clone()).unwrap();
+
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(101),
+        id_str: None,
+        method: "tools/call".to_string(),
+        params: Some(json!({"name": "project_overview", "arguments": {}})),
+    };
+
+    let resp = server.process_request(&req);
+    assert!(resp.error.is_none());
+    assert!(resp.result.is_some());
+    
+    let budget = server.budget().lock().unwrap();
+    assert!(budget.usage() > 0);
+}
+
+#[test]
+fn test_mcp_run_command_budget_enforcement() {
+    let (_dir, project) = setup();
+    let mut cfg = Config::default();
+    // Allow 'echo'
+    cfg.security.command_allowlist.push("echo".to_string());
+    // Small budget
+    cfg.context.max_session_context_bytes = 50;
+    
+    let server = McpServer::new(project.clone(), cfg.clone()).unwrap();
+
+    // A command that will output some text
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(102),
+        id_str: None,
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "run_command",
+            "arguments": {"command": "echo", "args": ["this is a very long string that will definitely exceed the fifty byte budget limit we just set"], "skip_confirmation": true}
+        })),
+    };
+
+    let resp = server.process_request(&req);
+    // It should be cleanly rejected
+    assert!(resp.error.is_some());
+    let err = resp.error.unwrap();
+    assert_eq!(err.code, -32603);
+    assert!(err.message.contains("budget exceeded"));
+}
