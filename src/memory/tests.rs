@@ -175,7 +175,7 @@ fn test_memory_export_before_delete() {
     let sessions = memory.list_sessions().unwrap();
     assert!(sessions.is_empty());
 
-    let archive_path = _project.cache_dir.join("deleted_sessions").join("session-sess1.tar");
+    let archive_path = project.cache_dir.join("deleted_sessions").join("session-sess1.tar");
     assert!(archive_path.exists());
     let archive_content = fs::read_to_string(&archive_path).unwrap();
     let archived_entries: Vec<MemoryEntry> = serde_json::from_str(&archive_content).unwrap();
