@@ -603,6 +603,9 @@ impl ToolHandler for DiagnosticsTool {
         
         let report = crate::diagnostics::run_all_checks(&self.project, &self.config, &index);
         
+        let is_healthy = report.is_healthy();
+        let has_warnings = report.has_warnings();
+        
         let checks: Vec<_> = report.checks.into_iter().map(|c| json!({
             "name": c.name,
             "health": match c.health {
@@ -616,11 +619,11 @@ impl ToolHandler for DiagnosticsTool {
 
         Ok(McpToolResult {
             content: vec![McpContent::Json(json!({
-                "is_healthy": report.is_healthy(),
-                "has_warnings": report.has_warnings(),
+                "is_healthy": is_healthy,
+                "has_warnings": has_warnings,
                 "checks": checks,
             }))],
-            is_error: vec![!report.is_healthy()],
+            is_error: vec![!is_healthy],
         })
     }
 }
