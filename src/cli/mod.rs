@@ -387,7 +387,7 @@ impl Cli {
                                     .imports
                                     .iter()
                                     .filter_map(|imp| {
-                                        let target_file = resolve_import_to_file(&imp.path, &file.rel_path, &file.language);
+                                        let target_file = resolve_import_to_file(&imp.path, &file.rel_path, &file.language, &project.root);
                                         if target_file.is_empty() {
                                             None
                                         } else {
@@ -493,7 +493,7 @@ impl Cli {
                                         .imports
                                         .iter()
                                         .filter_map(|imp| {
-                                            let target_file = resolve_import_to_file(&imp.path, &file.rel_path, &file.language);
+                                            let target_file = resolve_import_to_file(&imp.path, &file.rel_path, &file.language, &project.root);
                                             if target_file.is_empty() {
                                                 None
                                             } else {
@@ -1150,7 +1150,7 @@ impl Cli {
     }
 }
 
-fn resolve_import_to_file(imp_path: &str, source_path: &str, language: &str) -> String {
+fn resolve_import_to_file(imp_path: &str, source_path: &str, language: &str, project_root: &std::path::Path) -> String {
     if imp_path.is_empty() || imp_path == "." {
         return String::new();
     }
@@ -1183,7 +1183,7 @@ fn resolve_import_to_file(imp_path: &str, source_path: &str, language: &str) -> 
     };
 
     for candidate in candidates {
-        if std::path::Path::new(&candidate).exists() {
+        if project_root.join(&candidate).exists() {
             return candidate;
         }
     }
@@ -1193,4 +1193,30 @@ fn resolve_import_to_file(imp_path: &str, source_path: &str, language: &str) -> 
     }
 
     String::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_resolve_import_to_file_uses_project_root() {
+        let dir = tempdir().unwrap();
+        let project_root = dir.path();
+        
+        // Create a fake target structure inside the temp dir
+        let module_dir = project_root.join("ai");
+        fs::create_dir_all(&module_dir).unwrap();
+        fs::write(module_dir.join("client.py"), "print('hello')").unwrap();
+        
+        // Test that it resolves correctly using project_root, even if CWD is different
+        let resolved = resolve_import_to_file("ai.client", "main.py", "Python", project_root);
+        assert_eq!(resolved, "ai/client.py");
+        
+        // Test absolute imports
+        let missing = resolve_import_to_file("ai.missing", "main.py", "Python", project_root);
+        assert_eq!(missing, "");
+    }
 }

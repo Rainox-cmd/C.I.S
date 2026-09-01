@@ -322,7 +322,7 @@ fn test_mcp_all_tool_handlers() {
         ("dependency_context", json!({"path": "src/main.rs"})),
         ("impact_analysis", json!({"path": "src/main.rs"})),
         ("memory_context", json!({"scope": "project"})),
-        ("session_context", json!({"session_id": "default"})),
+        ("session_context", json!({"session_id": "default", "action": "list"})),
         ("git_context", json!({})),
         ("diagnostics", json!({})),
         ("run_command", json!({"command": "echo", "args": ["hello"]})),
@@ -532,3 +532,105 @@ fn test_mcp_run_command_budget_enforcement() {
     assert_eq!(err.code, -32603);
     assert!(err.message.contains("budget exceeded"));
 }
+
+#[test]
+fn test_mcp_session_context_tool_actions() {
+    let (_dir, project) = setup();
+    let cfg = Config::default();
+    let server = McpServer::new(project, cfg).unwrap();
+
+    // 1. set
+    let req_set = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(103),
+        id_str: None,
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "session_context",
+            "arguments": {
+                "session_id": "test_sess",
+                "action": "set",
+                "key": "test_key",
+                "value": "test_val"
+            }
+        })),
+    };
+    let resp = server.process_request(&req_set);
+    assert!(resp.error.is_none());
+
+    // 2. get
+    let req_get = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(104),
+        id_str: None,
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "session_context",
+            "arguments": {
+                "session_id": "test_sess",
+                "action": "get",
+                "key": "test_key"
+            }
+        })),
+    };
+    let resp = server.process_request(&req_get);
+    assert!(resp.error.is_none());
+    let result = resp.result.unwrap();
+    assert!(result["content"][0]["data"]["entry"].is_object());
+
+    // 3. delete
+    let req_delete = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(105),
+        id_str: None,
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "session_context",
+            "arguments": {
+                "session_id": "test_sess",
+                "action": "delete",
+                "key": "test_key"
+            }
+        })),
+    };
+    let resp = server.process_request(&req_delete);
+    assert!(resp.error.is_none());
+}
+
+#[test]
+fn test_mcp_tool_schemas() {
+    let (_dir, project) = setup();
+    let cfg = Config::default();
+    let server = McpServer::new(project, cfg).unwrap();
+
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(106),
+        id_str: None,
+        method: "tools/list".to_string(),
+        params: None,
+    };
+    let resp = server.process_request(&req);
+    assert!(resp.error.is_none());
+    let result = resp.result.unwrap();
+    let tools = result.get("tools").unwrap().as_array().unwrap();
+    assert!(!tools.is_empty());
+    
+    for tool in tools {
+        let input_schema = tool.get("inputSchema").expect("inputSchema is missing");
+        let schema_type = input_schema.get("type").expect("type is missing");
+        assert_eq!(schema_type.as_str().unwrap(), "object");
+        let properties = input_schema.get("properties").expect("properties missing");
+        assert!(properties.is_object());
+        
+        let name = tool.get("name").unwrap().as_str().unwrap();
+        if name == "search" {
+            assert!(properties.get("query").is_some());
+        } else if name == "session_context" {
+            assert!(properties.get("session_id").is_some());
+            assert!(properties.get("action").is_some());
+        }
+    }
+}
+
+

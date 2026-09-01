@@ -259,7 +259,7 @@ impl ToolHandler for FileContextTool {
     fn name(&self) -> &str { "file_context" }
     fn description(&self) -> &str { "Get context information about a specific file" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "file_context".to_string(), description: "Retrieve file metadata, symbols, and dependencies".to_string(), input_schema: None })
+        Some(McpTool { name: "file_context".to_string(), description: "Retrieve file metadata, symbols, and dependencies".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new(); props.insert("path".to_string(), serde_json::json!({ "type": "string", "description": "File path" })); props }, required: vec!["path".to_string()] }) })
     }
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let path = params.get("path").and_then(|v| v.as_str()).ok_or_else(|| JsonRpcError {
@@ -312,7 +312,7 @@ impl ToolHandler for SymbolContextTool {
     fn name(&self) -> &str { "symbol_context" }
     fn description(&self) -> &str { "Get context about a specific symbol" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "symbol_context".to_string(), description: "Retrieve symbol definition, location, and references".to_string(), input_schema: None })
+        Some(McpTool { name: "symbol_context".to_string(), description: "Retrieve symbol definition, location, and references".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new(); props.insert("symbol".to_string(), serde_json::json!({ "type": "string", "description": "Symbol name" })); props }, required: vec!["symbol".to_string()] }) })
     }
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let symbol = params.get("symbol").and_then(|v| v.as_str()).ok_or_else(|| JsonRpcError {
@@ -362,7 +362,7 @@ impl ToolHandler for DependencyContextTool {
     fn name(&self) -> &str { "dependency_context" }
     fn description(&self) -> &str { "Get dependency information for a file" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "dependency_context".to_string(), description: "Retrieve direct and transitive dependencies".to_string(), input_schema: None })
+        Some(McpTool { name: "dependency_context".to_string(), description: "Retrieve direct and transitive dependencies".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new(); props.insert("path".to_string(), serde_json::json!({ "type": "string", "description": "File path" })); props }, required: vec!["path".to_string()] }) })
     }
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let path = params.get("path").and_then(|v| v.as_str()).ok_or_else(|| JsonRpcError {
@@ -406,7 +406,7 @@ impl ToolHandler for ImpactAnalysisTool {
     fn name(&self) -> &str { "impact_analysis" }
     fn description(&self) -> &str { "Analyze the impact of changes to a file" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "impact_analysis".to_string(), description: "Show files affected by changes to a given file".to_string(), input_schema: None })
+        Some(McpTool { name: "impact_analysis".to_string(), description: "Show files affected by changes to a given file".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new(); props.insert("path".to_string(), serde_json::json!({ "type": "string", "description": "File path" })); props }, required: vec!["path".to_string()] }) })
     }
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let path = params.get("path").and_then(|v| v.as_str()).ok_or_else(|| JsonRpcError {
@@ -449,7 +449,8 @@ impl ToolHandler for MemoryContextTool {
     fn name(&self) -> &str { "memory_context" }
     fn description(&self) -> &str { "Access project and session memory" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "memory_context".to_string(), description: "Retrieve project or session memory entries".to_string(), input_schema: None })
+        Some(McpTool { name: "memory_context".to_string(), description: "Retrieve project or session memory entries".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new(); props.insert("scope".to_string(), serde_json::json!({ "type": "string", "enum": ["project", "session"] }));
+        props.insert("key".to_string(), serde_json::json!({ "type": "string" })); props }, required: vec!["scope".to_string()] }) })
     }
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let scope = params.get("scope").and_then(|v| v.as_str()).unwrap_or("project");
@@ -502,7 +503,12 @@ impl ToolHandler for SessionContextTool {
     fn name(&self) -> &str { "session_context" }
     fn description(&self) -> &str { "Manage session context for current task" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "session_context".to_string(), description: "List, create, or retrieve session memory entries".to_string(), input_schema: None })
+        Some(McpTool { name: "session_context".to_string(), description: "List, create, or retrieve session memory entries".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new(); props.insert("session_id".to_string(), serde_json::json!({ "type": "string" }));
+        props.insert("action".to_string(), serde_json::json!({ "type": "string", "enum": ["list", "get", "set", "delete"] }));
+        props.insert("key".to_string(), serde_json::json!({ "type": "string" }));
+        props.insert("value".to_string(), serde_json::json!({ "type": "string" }));
+        props.insert("category".to_string(), serde_json::json!({ "type": "string" }));
+        props.insert("ttl".to_string(), serde_json::json!({ "type": "number" })); props }, required: vec!["session_id".to_string(), "action".to_string()] }) })
     }
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let session_id = params.get("session_id").and_then(|v| v.as_str()).unwrap_or("default");
@@ -518,6 +524,21 @@ impl ToolHandler for SessionContextTool {
             "list" => {
                 let list = mm.session_list(session_id).unwrap_or_default();
                 json!({"entries": list})
+            }
+            "get" => {
+                let key = params.get("key").and_then(|v| v.as_str()).unwrap_or("");
+                let entry = mm.session_get(session_id, key).unwrap_or(None);
+                json!({"entry": entry})
+            }
+            "set" => {
+                let key = params.get("key").and_then(|v| v.as_str()).unwrap_or("");
+                let value = params.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                let category = params.get("category").and_then(|v| v.as_str()).unwrap_or("general");
+                let ttl = params.get("ttl").and_then(|v| v.as_u64());
+                let provenance = crate::memory::Provenance::AiGenerated;
+                let tags = Vec::new();
+                mm.session_set(session_id, key, value, provenance, category, ttl, tags).unwrap_or(());
+                json!({"success": true})
             }
             "delete" => {
                 let key = params.get("key").and_then(|v| v.as_str()).unwrap_or("");
@@ -546,7 +567,8 @@ impl ToolHandler for GitContextTool {
     fn name(&self) -> &str { "git_context" }
     fn description(&self) -> &str { "Retrieve Git repository context" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "git_context".to_string(), description: "Get branch, status, diff, and file history from Git".to_string(), input_schema: None })
+        Some(McpTool { name: "git_context".to_string(), description: "Get branch, status, diff, and file history from Git".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new(); props.insert("path".to_string(), serde_json::json!({ "type": "string" }));
+        props.insert("include_diff".to_string(), serde_json::json!({ "type": "boolean" })); props }, required: vec![] }) })
     }
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let file_path = params.get("path").and_then(|v| v.as_str());
@@ -607,7 +629,7 @@ impl ToolHandler for DiagnosticsTool {
     fn name(&self) -> &str { "diagnostics" }
     fn description(&self) -> &str { "Run diagnostic checks on the project" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "diagnostics".to_string(), description: "Run health checks and return diagnostic results".to_string(), input_schema: None })
+        Some(McpTool { name: "diagnostics".to_string(), description: "Run health checks and return diagnostic results".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new();  props }, required: vec![] }) })
     }
     fn execute(&self, _params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let index = Index::open(&self.project, &self.config).map_err(|e| JsonRpcError {
@@ -659,7 +681,9 @@ impl ToolHandler for RunCommandTool {
     fn name(&self) -> &str { "run_command" }
     fn description(&self) -> &str { "Execute a terminal command with permission checks" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "run_command".to_string(), description: "Run a command with security policy enforcement. Requires confirmation for risky commands.".to_string(), input_schema: None })
+        Some(McpTool { name: "run_command".to_string(), description: "Run a command with security policy enforcement. Requires confirmation for risky commands.".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new(); props.insert("command".to_string(), serde_json::json!({ "type": "string" }));
+        props.insert("args".to_string(), serde_json::json!({ "type": "array", "items": { "type": "string" } }));
+        props.insert("skip_confirmation".to_string(), serde_json::json!({ "type": "boolean" })); props }, required: vec!["command".to_string()] }) })
     }
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let command = params.get("command").and_then(|v| v.as_str()).ok_or_else(|| JsonRpcError {

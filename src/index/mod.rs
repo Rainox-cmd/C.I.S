@@ -592,15 +592,15 @@ impl Index {
 
     pub fn get_transitive_dependencies(&self, rel_path: &str) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(
-            "WITH RECURSIVE deps(target_file_id) AS (
-                 SELECT e.target_file_id FROM edges e
-                 JOIN files sf ON e.source_file_id = sf.id
+            "WITH RECURSIVE transitive_deps(target_file_id) AS (
+                 SELECT d.target_file_id FROM dependencies d
+                 JOIN files sf ON d.source_file_id = sf.id
                  WHERE sf.rel_path = ?1
                  UNION
                  SELECT e.target_file_id FROM edges e
-                 JOIN deps d ON e.source_file_id = d.target_file_id
+                 JOIN transitive_deps d ON e.source_file_id = d.target_file_id
              )
-             SELECT DISTINCT f.rel_path FROM deps d
+             SELECT DISTINCT f.rel_path FROM transitive_deps d
              JOIN files f ON d.target_file_id = f.id
              WHERE f.rel_path != ?1",
         )?;
