@@ -18,110 +18,97 @@ impl LanguageParser for GoParser {
             language: self.language().to_string(),
         };
 
-        let re_func = regex::Regex::new(r"func\s+(\w+)\s*\(").unwrap();
-        let re_method = regex::Regex::new(r"func\s*\([^)]+\)\s*(\w+)\s*\(").unwrap();
-        let re_struct = regex::Regex::new(r"type\s+(\w+)\s+struct\s*\{").unwrap();
-        let re_interface = regex::Regex::new(r"type\s+(\w+)\s+interface\s*\{").unwrap();
-        let re_import_block = regex::Regex::new(r"import\s*\(").unwrap();
-        let re_import_single = regex::Regex::new(r#"import\s+"([^"]+)"#).unwrap();
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(tree_sitter_go::language()).is_err() {
+            result.syntax_ok = false;
+            result.syntax_error = Some("Failed to load Go grammar".to_string());
+            return result;
+        }
 
-        let lines: Vec<&str> = content.lines().collect();
-        let mut in_import_block = false;
-        let mut in_type_block = false;
-        let mut type_block_indent = 0;
+        let tree = match parser.parse(content, None) {
+            Some(t) => t,
+            None => {
+                result.syntax_ok = false;
+                result.syntax_error = Some("Failed to parse content".to_string());
+                return result;
+            }
+        };
 
-        for (line_num, line) in lines.iter().enumerate() {
-            let line_no = line_num + 1;
-            let trimmed = line.trim_start();
-            let indent = line.len() - trimmed.len();
+        if tree.root_node().has_error() {
+            result.syntax_ok = false;
+            result.syntax_error = Some("Syntax error detected".to_string());
+        }
 
-            if in_import_block {
-                if trimmed == ")" {
-                    in_import_block = false;
-                    continue;
-                }
-                if let Some(quote_start) = trimmed.find('"') {
-                    if let Some(quote_end) = trimmed[quote_start + 1..].find('"') {
-                        let path = trimmed[quote_start + 1..quote_start + 1 + quote_end].to_string();
-                        let is_rel = path.starts_with(".");
-                        result.imports.push(Import {
-                            path,
-                            is_relative: is_rel,
-                            line: line_no as u32,
-                            column: quote_start as u32,
+        let mut stack = vec![tree.root_node()];
+
+        while let Some(node) = stack.pop() {
+            let kind = node.kind();
+            
+            if kind == "function_declaration" {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    if let Ok(name) = name_node.utf8_text(content.as_bytes()) {
+                        result.symbols.push(Symbol {
+                            name: name.to_string(),
+                            kind: SymbolKind::Function,
+                            line: (name_node.start_position().row + 1) as u32,
+                            column: name_node.start_position().column as u32,
                         });
                     }
                 }
-                continue;
-            }
-
-            if in_type_block && indent <= type_block_indent && !trimmed.is_empty() && !trimmed.starts_with("//") {
-                in_type_block = false;
-            }
-
-            if let Some(cap) = re_func.captures(trimmed) {
-                if let Some(name) = cap.get(1) {
-                    result.symbols.push(Symbol {
-                        name: name.as_str().to_string(),
-                        kind: SymbolKind::Function,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
+            } else if kind == "method_declaration" {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    if let Ok(name) = name_node.utf8_text(content.as_bytes()) {
+                        result.symbols.push(Symbol {
+                            name: name.to_string(),
+                            kind: SymbolKind::Method,
+                            line: (name_node.start_position().row + 1) as u32,
+                            column: name_node.start_position().column as u32,
+                        });
+                    }
+                }
+            } else if kind == "type_declaration" {
+                for i in 0..node.child_count() {
+                    if let Some(spec) = node.child(i) {
+                        if spec.kind() == "type_spec" {
+                            if let Some(name_node) = spec.child_by_field_name("name") {
+                                if let Ok(name) = name_node.utf8_text(content.as_bytes()) {
+                                    let mut sym_kind = SymbolKind::Other("Type".to_string());
+                                    if let Some(type_node) = spec.child_by_field_name("type") {
+                                        if type_node.kind() == "struct_type" {
+                                            sym_kind = SymbolKind::Struct;
+                                        } else if type_node.kind() == "interface_type" {
+                                            sym_kind = SymbolKind::Interface;
+                                        }
+                                    }
+                                    result.symbols.push(Symbol {
+                                        name: name.to_string(),
+                                        kind: sym_kind,
+                                        line: (name_node.start_position().row + 1) as u32,
+                                        column: name_node.start_position().column as u32,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if kind == "import_spec" {
+                if let Some(path_node) = node.child_by_field_name("path") {
+                    if let Ok(path_quoted) = path_node.utf8_text(content.as_bytes()) {
+                        let path = path_quoted.trim_matches(&['\'', '"'][..]).to_string();
+                        let is_rel = path.starts_with('.') || path.starts_with('/');
+                        result.imports.push(Import {
+                            path,
+                            is_relative: is_rel,
+                            line: (path_node.start_position().row + 1) as u32,
+                            column: path_node.start_position().column as u32,
+                        });
+                    }
                 }
             }
 
-            if let Some(cap) = re_method.captures(trimmed) {
-                if let Some(name) = cap.get(1) {
-                    result.symbols.push(Symbol {
-                        name: name.as_str().to_string(),
-                        kind: SymbolKind::Method,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
-                }
-            }
-
-            if let Some(cap) = re_struct.captures(trimmed) {
-                if let Some(name) = cap.get(1) {
-                    result.symbols.push(Symbol {
-                        name: name.as_str().to_string(),
-                        kind: SymbolKind::Struct,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
-                    in_type_block = true;
-                    type_block_indent = indent;
-                }
-            }
-
-            if let Some(cap) = re_interface.captures(trimmed) {
-                if let Some(name) = cap.get(1) {
-                    result.symbols.push(Symbol {
-                        name: name.as_str().to_string(),
-                        kind: SymbolKind::Interface,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
-                    in_type_block = true;
-                    type_block_indent = indent;
-                }
-            }
-
-            if re_import_block.is_match(trimmed) {
-                in_import_block = true;
-                continue;
-            }
-
-            if let Some(cap) = re_import_single.captures(trimmed) {
-                if let Some(path_match) = cap.get(1) {
-                    let path = path_match.as_str().to_string();
-                    let is_rel = path.starts_with(".");
-                    result.imports.push(Import {
-                        path,
-                        is_relative: is_rel,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
+            for i in (0..node.child_count()).rev() {
+                if let Some(child) = node.child(i) {
+                    stack.push(child);
                 }
             }
         }

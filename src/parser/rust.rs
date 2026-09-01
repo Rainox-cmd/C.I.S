@@ -18,72 +18,72 @@ impl LanguageParser for RustParser {
             language: self.language().to_string(),
         };
 
-        let re_function = regex::Regex::new(r"fn\s+(\w+)\s*[<(]").unwrap();
-        let re_struct = regex::Regex::new(r"struct\s+(\w+)\s*[;{<]").unwrap();
-        let re_enum = regex::Regex::new(r"enum\s+(\w+)\s*\{").unwrap();
-        let re_trait = regex::Regex::new(r"trait\s+(\w+)\s*[{<]").unwrap();
-        let re_use = regex::Regex::new(r"use\s+(.+?);").unwrap();
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(tree_sitter_rust::language()).is_err() {
+            result.syntax_ok = false;
+            result.syntax_error = Some("Failed to load Rust grammar".to_string());
+            return result;
+        }
 
-        for (line_num, line) in content.lines().enumerate() {
-            let line_no = line_num + 1;
-            let trimmed = line.trim_start();
+        let tree = match parser.parse(content, None) {
+            Some(t) => t,
+            None => {
+                result.syntax_ok = false;
+                result.syntax_error = Some("Failed to parse content".to_string());
+                return result;
+            }
+        };
 
-            if let Some(cap) = re_function.captures(trimmed) {
-                if let Some(name) = cap.get(1) {
-                    result.symbols.push(Symbol {
-                        name: name.as_str().to_string(),
-                        kind: SymbolKind::Function,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
+        if tree.root_node().has_error() {
+            result.syntax_ok = false;
+            result.syntax_error = Some("Syntax error detected".to_string());
+        }
+
+        let mut stack = vec![tree.root_node()];
+
+        while let Some(node) = stack.pop() {
+            let kind = node.kind();
+
+            let sym_kind = match kind {
+                "function_item" => Some(SymbolKind::Function),
+                "struct_item" => Some(SymbolKind::Struct),
+                "enum_item" => Some(SymbolKind::Enum),
+                "trait_item" => Some(SymbolKind::Trait),
+                _ => None,
+            };
+
+            if let Some(sk) = sym_kind {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    if let Ok(name) = name_node.utf8_text(content.as_bytes()) {
+                        result.symbols.push(Symbol {
+                            name: name.to_string(),
+                            kind: sk,
+                            line: (name_node.start_position().row + 1) as u32,
+                            column: name_node.start_position().column as u32,
+                        });
+                    }
+                }
+            } else if kind == "use_declaration" {
+                if let Some(arg_node) = node.child_by_field_name("argument") {
+                    if let Ok(path_text) = arg_node.utf8_text(content.as_bytes()) {
+                        let path = path_text.to_string();
+                        let is_rel = path.starts_with("crate::")
+                            || path.starts_with("super::")
+                            || path.starts_with("self::");
+                        
+                        result.imports.push(Import {
+                            path,
+                            is_relative: is_rel,
+                            line: (arg_node.start_position().row + 1) as u32,
+                            column: arg_node.start_position().column as u32,
+                        });
+                    }
                 }
             }
 
-            if let Some(cap) = re_struct.captures(trimmed) {
-                if let Some(name) = cap.get(1) {
-                    result.symbols.push(Symbol {
-                        name: name.as_str().to_string(),
-                        kind: SymbolKind::Struct,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
-                }
-            }
-
-            if let Some(cap) = re_enum.captures(trimmed) {
-                if let Some(name) = cap.get(1) {
-                    result.symbols.push(Symbol {
-                        name: name.as_str().to_string(),
-                        kind: SymbolKind::Enum,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
-                }
-            }
-
-            if let Some(cap) = re_trait.captures(trimmed) {
-                if let Some(name) = cap.get(1) {
-                    result.symbols.push(Symbol {
-                        name: name.as_str().to_string(),
-                        kind: SymbolKind::Trait,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
-                }
-            }
-
-            if let Some(cap) = re_use.captures(trimmed) {
-                if let Some(path_match) = cap.get(1) {
-                    let path = path_match.as_str().trim_end_matches(';').to_string();
-                    let is_rel = path.starts_with("crate::")
-                        || path.starts_with("super::")
-                        || path.starts_with("self::");
-                    result.imports.push(Import {
-                        path,
-                        is_relative: is_rel,
-                        line: line_no as u32,
-                        column: cap.get(0).unwrap().start() as u32,
-                    });
+            for i in (0..node.child_count()).rev() {
+                if let Some(child) = node.child(i) {
+                    stack.push(child);
                 }
             }
         }

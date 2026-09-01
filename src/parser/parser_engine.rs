@@ -1,6 +1,6 @@
 use super::{
     generic::GenericParser, go::GoParser, javascript::JavaScriptParser, python::PythonParser,
-    rust::RustParser, LanguageParser, ParseResult,
+    rust::RustParser, typescript::TypeScriptParser, LanguageParser, ParseResult,
 };
 use std::path::Path;
 
@@ -10,7 +10,8 @@ impl ParserEngine {
     pub fn parse_file(path: &Path, content: &str, language: &str) -> ParseResult {
         let parser: &dyn LanguageParser = match language {
             "Python" => &PythonParser,
-            "JavaScript" | "TypeScript" => &JavaScriptParser,
+            "JavaScript" => &JavaScriptParser,
+            "TypeScript" => &TypeScriptParser,
             "Rust" => &RustParser,
             "Go" => &GoParser,
             _ => &GenericParser {

@@ -1,11 +1,11 @@
 use crate::parser::{Import, LanguageParser, ParseResult, Symbol, SymbolKind};
 use std::path::Path;
 
-pub struct JavaScriptParser;
+pub struct TypeScriptParser;
 
-impl LanguageParser for JavaScriptParser {
+impl LanguageParser for TypeScriptParser {
     fn language(&self) -> &str {
-        "JavaScript"
+        "TypeScript"
     }
 
     fn parse(&self, _path: &Path, content: &str) -> ParseResult {
@@ -19,9 +19,9 @@ impl LanguageParser for JavaScriptParser {
         };
 
         let mut parser = tree_sitter::Parser::new();
-        if parser.set_language(tree_sitter_javascript::language()).is_err() {
+        if parser.set_language(tree_sitter_typescript::language_tsx()).is_err() {
             result.syntax_ok = false;
-            result.syntax_error = Some("Failed to load JavaScript grammar".to_string());
+            result.syntax_error = Some("Failed to load TypeScript grammar".to_string());
             return result;
         }
 
@@ -55,6 +55,17 @@ impl LanguageParser for JavaScriptParser {
                         });
                     }
                 }
+            } else if kind == "interface_declaration" || kind == "type_alias_declaration" {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    if let Ok(name) = name_node.utf8_text(content.as_bytes()) {
+                        result.symbols.push(Symbol {
+                            name: name.to_string(),
+                            kind: SymbolKind::Interface,
+                            line: (name_node.start_position().row + 1) as u32,
+                            column: name_node.start_position().column as u32,
+                        });
+                    }
+                }
             } else if kind == "function_declaration" {
                 if let Some(name_node) = node.child_by_field_name("name") {
                     if let Ok(name) = name_node.utf8_text(content.as_bytes()) {
@@ -79,7 +90,6 @@ impl LanguageParser for JavaScriptParser {
                     }
                 }
             } else if kind == "lexical_declaration" || kind == "variable_declaration" {
-                // To catch `const foo = () => {}`
                 for i in 0..node.child_count() {
                     if let Some(declarator) = node.child(i) {
                         if declarator.kind() == "variable_declarator" {
