@@ -263,6 +263,12 @@ fn test_memory_session_ttl() {
 
     std::thread::sleep(std::time::Duration::from_secs(2));
 
+    let expired = memory.expired_sessions().unwrap();
+    assert_eq!(expired.len(), 1);
+    assert_eq!(expired[0], "sess1");
+
+    memory.prune_expired_sessions().unwrap();
+
     assert!(memory.session_get("sess1", "task").unwrap().is_none());
 }
 
