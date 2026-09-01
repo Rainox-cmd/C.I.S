@@ -340,4 +340,32 @@ trait Debug {}
         assert_eq!(result.symbols[3].kind, SymbolKind::Trait);
         assert_eq!(result.symbols[3].line, 5);
     }
+
+    #[test]
+    fn test_tree_sitter_ignores_comments_and_strings() {
+        let content = r#"
+// fn fake_function() {}
+let x = "fn fake_string_function() {}";
+fn real_function() {}
+"#;
+        let result = RustParser.parse(std::path::Path::new("test.rs"), content);
+        assert!(result.syntax_ok);
+        assert_eq!(result.symbols.len(), 1);
+        assert_eq!(result.symbols[0].name, "real_function");
+    }
+
+    #[test]
+    fn test_tree_sitter_nested_declarations() {
+        let content = r#"
+fn outer() {
+    fn inner() {}
 }
+"#;
+        let result = RustParser.parse(std::path::Path::new("test.rs"), content);
+        assert!(result.syntax_ok);
+        assert_eq!(result.symbols.len(), 2);
+        assert!(result.symbols.iter().any(|s| s.name == "outer"));
+        assert!(result.symbols.iter().any(|s| s.name == "inner"));
+    }
+}
+
