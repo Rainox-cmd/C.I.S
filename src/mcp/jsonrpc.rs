@@ -77,7 +77,6 @@ pub struct McpTool {
 pub struct McpToolInputSchema {
     #[serde(rename = "type")]
     pub schema_type: String,
-    #[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub properties: std::collections::HashMap<String, serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty", rename = "required")]
     pub required: Vec<String>,
