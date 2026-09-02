@@ -8,7 +8,7 @@ use crate::index::Index;
 use crate::project::Project;
 
 use super::jsonrpc::{
-    JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpTool, McpToolResult, McpContent,
+    JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpTool, McpToolInputSchema, McpToolResult, McpContent,
     MCP_METHOD_CALL_TOOL, MCP_METHOD_INITIALIZE, MCP_METHOD_LIST_TOOLS,
 };
 use super::tools::{ToolHandler, ToolRegistry};
@@ -533,11 +533,10 @@ impl ToolHandler for SessionContextTool {
             "set" => {
                 let key = params.get("key").and_then(|v| v.as_str()).unwrap_or("");
                 let value = params.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                let category = params.get("category").and_then(|v| v.as_str()).unwrap_or("general");
                 let ttl = params.get("ttl").and_then(|v| v.as_u64());
                 let provenance = crate::memory::Provenance::AiGenerated;
                 let tags = Vec::new();
-                mm.session_set(session_id, key, value, provenance, category, ttl, tags).unwrap_or(());
+                mm.session_set(session_id, key, value, provenance, ttl, tags).unwrap_or(());
                 json!({"success": true})
             }
             "delete" => {
