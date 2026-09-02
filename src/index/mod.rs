@@ -869,7 +869,7 @@ impl Index {
         // We will reopen the ones that are still present
         tx.execute(
             "UPDATE issues SET status = 'resolved', updated_at = ? WHERE status = 'open'",
-            params![now],
+            rusqlite::params![now],
         )?;
 
         let mut changed_count = 0;
@@ -888,7 +888,7 @@ impl Index {
             let cat_str = serde_json::to_string(&issue.category).unwrap();
             let sev_str = serde_json::to_string(&issue.severity).unwrap();
 
-            let changes = stmt.execute(params![
+            let changes = stmt.execute(rusqlite::params![
                 identity,
                 cat_str,
                 sev_str,
