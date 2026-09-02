@@ -640,7 +640,7 @@ impl ToolHandler for DiagnosticsTool {
     fn name(&self) -> &str { "diagnostics" }
     fn description(&self) -> &str { "Run diagnostic checks on the project" }
     fn input_schema(&self) -> Option<McpTool> {
-        Some(McpTool { name: "diagnostics".to_string(), description: "Run health checks and return diagnostic results".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: { let mut props = std::collections::HashMap::new();  props }, required: vec![] }) })
+        Some(McpTool { name: "diagnostics".to_string(), description: "Run health checks and return diagnostic results".to_string(), input_schema: Some(McpToolInputSchema { schema_type: "object".to_string(), properties: std::collections::HashMap::new(), required: vec![] }) })
     }
     fn execute(&self, _params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let index = Index::open(&self.project, &self.config).map_err(|e| JsonRpcError {
