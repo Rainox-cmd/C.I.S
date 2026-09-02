@@ -830,7 +830,115 @@ impl Index {
             )?;
         }
 
+        let has_issues_table: bool = self.conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='issues'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0) == 1;
+        if !has_issues_table {
+            self.conn.execute_batch(
+                "CREATE TABLE issues (
+                    id INTEGER PRIMARY KEY,
+                    identity TEXT NOT NULL UNIQUE,
+                    category TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    file TEXT,
+                    status TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);"
+            )?;
+        }
+
         Ok(())
+    }
+
+    pub fn save_issues(&self, analysis_issues: &[crate::analysis::Issue]) -> Result<usize> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+
+        let tx = self.conn.unchecked_transaction()?;
+
+        // Mark all existing open issues as resolved temporarily
+        // We will reopen the ones that are still present
+        tx.execute(
+            "UPDATE issues SET status = 'resolved', updated_at = ? WHERE status = 'open'",
+            params![now],
+        )?;
+
+        let mut changed_count = 0;
+
+        let mut stmt = tx.prepare(
+            "INSERT INTO issues (identity, category, severity, message, file, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
+             ON CONFLICT(identity) DO UPDATE SET
+                status = 'open',
+                updated_at = excluded.updated_at
+             WHERE status != 'open'"
+        )?;
+
+        for issue in analysis_issues {
+            let identity = issue.identity();
+            let cat_str = serde_json::to_string(&issue.category).unwrap();
+            let sev_str = serde_json::to_string(&issue.severity).unwrap();
+
+            let changes = stmt.execute(params![
+                identity,
+                cat_str,
+                sev_str,
+                issue.message,
+                issue.file,
+                now,
+                now
+            ])?;
+            if changes > 0 {
+                changed_count += 1;
+            }
+        }
+
+        drop(stmt);
+        tx.commit()?;
+        Ok(changed_count)
+    }
+
+    pub fn get_issues(&self, status_filter: Option<&str>) -> Result<Vec<crate::analysis::PersistentIssue>> {
+        let mut sql = "SELECT id, identity, category, severity, message, file, status, created_at, updated_at FROM issues".to_string();
+        let mut params_vec: Vec<String> = Vec::new();
+        
+        if let Some(status) = status_filter {
+            sql.push_str(" WHERE status = ?");
+            params_vec.push(status.to_string());
+        }
+        
+        let mut stmt = self.conn.prepare(&sql)?;
+        
+        let issue_iter = stmt.query_map(rusqlite::params_from_iter(params_vec.iter()), |row| {
+            let cat_str: String = row.get(2)?;
+            let sev_str: String = row.get(3)?;
+            Ok(crate::analysis::PersistentIssue {
+                id: row.get(0)?,
+                identity: row.get(1)?,
+                category: serde_json::from_str(&cat_str).unwrap_or(crate::analysis::IssueCategory::ScanError),
+                severity: serde_json::from_str(&sev_str).unwrap_or(crate::analysis::Severity::Warning),
+                message: row.get(4)?,
+                file: row.get(5)?,
+                status: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?;
+
+        let mut issues = Vec::new();
+        for issue in issue_iter {
+            issues.push(issue?);
+        }
+        Ok(issues)
     }
 }
 
@@ -842,3 +950,6 @@ mod graph_tests;
 
 #[cfg(test)]
 mod incr_tests;
+
+#[cfg(test)]
+mod issue_tests;

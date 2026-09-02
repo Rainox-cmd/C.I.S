@@ -4,28 +4,51 @@ use crate::parser::ParserEngine;
 use crate::project::Project;
 use crate::scanner::Scanner;
 use anyhow::Result;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::fs;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum IssueCategory {
     ScanError,
     SyntaxError,
     DependencyCycle,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Severity {
     Warning,
     Error,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Issue {
     pub category: IssueCategory,
     pub severity: Severity,
     pub message: String,
     pub file: Option<String>,
+}
+
+impl Issue {
+    pub fn identity(&self) -> String {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistentIssue {
+    pub id: i64,
+    pub identity: String,
+    pub category: IssueCategory,
+    pub severity: Severity,
+    pub message: String,
+    pub file: Option<String>,
+    pub status: String,
+    pub created_at: f64,
+    pub updated_at: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -94,6 +94,15 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Manage persistent analysis issues
+    Issues {
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        update: bool,
+        #[arg(long)]
+        status: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1121,6 +1130,40 @@ impl Cli {
                   }
                   Ok(())
               }
+              Commands::Issues { json, update, status } => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let idx = index::Index::open(&project, &cfg)?;
+
+                  if update {
+                      let report = crate::analysis::AnalysisEngine::run(&project, &cfg, &idx)?;
+                      let changed = idx.save_issues(&report.issues)?;
+                      if !json {
+                          println!("Analysis complete. Reconciled issues ({} changes).", changed);
+                      }
+                  }
+
+                  let issues = idx.get_issues(status.as_deref())?;
+
+                  if json {
+                      println!("{}", serde_json::to_string_pretty(&issues)?);
+                  } else {
+                      println!("C.I.S. Issues");
+                      println!("=============");
+                      if issues.is_empty() {
+                          println!("No issues found.");
+                      } else {
+                          for issue in issues {
+                              let file_display = issue.file.as_deref().unwrap_or("general");
+                              println!(
+                                  "[{}] {} | {:?} | {}: {}",
+                                  issue.id, issue.status.to_uppercase(), issue.severity, file_display, issue.message
+                              );
+                          }
+                      }
+                  }
+                  Ok(())
+              }
               Commands::Context { subcommand } => {
                   let project = project::Project::discover()?;
                   let cfg = config::Config::load(&project)?;
@@ -1338,6 +1381,29 @@ mod tests {
         match cli_json.command {
             Commands::Analyze { json } => assert!(json, "json should be true"),
             _ => panic!("Expected Commands::Analyze"),
+        }
+    }
+
+    #[test]
+    fn test_issues_cli_parsing() {
+        let cli = Cli::try_parse_from(vec!["cis", "issues"]).unwrap();
+        match cli.command {
+            Commands::Issues { json, update, status } => {
+                assert!(!json);
+                assert!(!update);
+                assert_eq!(status, None);
+            }
+            _ => panic!("Expected Commands::Issues"),
+        }
+
+        let cli2 = Cli::try_parse_from(vec!["cis", "issues", "--update", "--json", "--status", "open"]).unwrap();
+        match cli2.command {
+            Commands::Issues { json, update, status } => {
+                assert!(json);
+                assert!(update);
+                assert_eq!(status.as_deref(), Some("open"));
+            }
+            _ => panic!("Expected Commands::Issues"),
         }
     }
 }
