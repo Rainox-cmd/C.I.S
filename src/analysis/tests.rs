@@ -53,12 +53,6 @@ fn test_dependency_cycle() {
         lines: 1,
         hash: "h1".into(),
         mtime: 0.0,
-        complexity_score: 1,
-        complexity_level: "low".into(),
-        risk_level: "low".into(),
-        commit_hash: None,
-        index_stage: "parsed".into(),
-        indexed_at: 0.0,
     };
     let f2 = FileRecord {
         rel_path: "b.rs".into(),
@@ -70,12 +64,6 @@ fn test_dependency_cycle() {
         lines: 1,
         hash: "h2".into(),
         mtime: 0.0,
-        complexity_score: 1,
-        complexity_level: "low".into(),
-        risk_level: "low".into(),
-        commit_hash: None,
-        index_stage: "parsed".into(),
-        indexed_at: 0.0,
     };
     index.upsert_files(&[f1, f2]).unwrap();
     
