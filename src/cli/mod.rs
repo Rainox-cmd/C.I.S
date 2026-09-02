@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::process;
 
-use crate::{config, context, diagnostics, git, index, memory, mcp, parser, project, scanner, terminal};
+use crate::{analysis, config, context, diagnostics, git, index, memory, mcp, parser, project, release, scanner, terminal};
 
 #[derive(Parser)]
 #[command(name = "cis")]
@@ -84,6 +84,16 @@ pub enum Commands {
     },
     /// MCP server mode (for AI integration)
     Mcp,
+    /// Release management commands
+    Release {
+        #[command(subcommand)]
+        subcommand: ReleaseSubcommand,
+    },
+    /// Run stateless analysis on the project
+    Analyze {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -135,6 +145,14 @@ pub enum MemorySubcommand {
     Usage,
     /// Prune expired session memory (with archive before deletion)
     Prune,
+}
+
+#[derive(Subcommand)]
+pub enum ReleaseSubcommand {
+    /// Generate and save the project changelog
+    Changelog,
+    /// Validate the presence of a release build
+    Validate,
 }
 
 #[derive(Subcommand)]
@@ -1017,6 +1035,92 @@ impl Cli {
                   server.run_stdio()?;
                   Ok(())
               }
+              Commands::Release { subcommand } => {
+                  let project = project::Project::discover()?;
+                  match subcommand {
+                      ReleaseSubcommand::Changelog => {
+                          release::ReleaseManager::save_changelog(&project)?;
+                          println!(
+                              "Changelog successfully generated at {}",
+                              release::ReleaseManager::changelog_path(&project).display()
+                          );
+                      }
+                      ReleaseSubcommand::Validate => {
+                          let is_valid = release::ReleaseManager::validate_build(&project)?;
+                          if is_valid {
+                              println!("Build validation passed.");
+                          } else {
+                              println!("Build validation failed. Release binary not found.");
+                              process::exit(1);
+                          }
+                      }
+                  }
+                  Ok(())
+              }
+              Commands::Analyze { json } => {
+                  let project = project::Project::discover()?;
+                  let cfg = config::Config::load(&project)?;
+                  let idx = index::Index::open(&project, &cfg)?;
+                  let report = crate::analysis::AnalysisEngine::run(&project, &cfg, &idx)?;
+
+                  if json {
+                      println!("{}", serde_json::to_string_pretty(&report)?);
+                  } else {
+                      println!("C.I.S. Analysis");
+                      println!("===============");
+                      println!("\nProject: {}", report.project_path);
+                      println!("\nIssues: {}", report.issues.len());
+
+                      if report.issues.is_empty() {
+                          println!("\nNo issues found.");
+                      } else {
+                          let mut scan_errors = Vec::new();
+                          let mut syntax_errors = Vec::new();
+                          let mut cycles = Vec::new();
+
+                          for issue in &report.issues {
+                              match issue.category {
+                                  crate::analysis::IssueCategory::ScanError => scan_errors.push(issue),
+                                  crate::analysis::IssueCategory::SyntaxError => syntax_errors.push(issue),
+                                  crate::analysis::IssueCategory::DependencyCycle => cycles.push(issue),
+                              }
+                          }
+
+                          if !scan_errors.is_empty() {
+                              println!("\nScan Errors");
+                              println!("-----------");
+                              for err in scan_errors {
+                                  println!("- {}", err.message);
+                              }
+                          }
+
+                          if !syntax_errors.is_empty() {
+                              println!("\nSyntax Errors");
+                              println!("-------------");
+                              for err in syntax_errors {
+                                  println!("- {}: {}", err.file.as_deref().unwrap_or("unknown"), err.message);
+                              }
+                          }
+
+                          if !cycles.is_empty() {
+                              println!("\nDependency Cycles");
+                              println!("-----------------");
+                              for cycle in cycles {
+                                  println!("- {}", cycle.message);
+                              }
+                          }
+                      }
+
+                      if !report.informational.is_empty() {
+                          println!("\nInformational");
+                          println!("-------------");
+                          for info in &report.informational {
+                              println!("{}", info);
+                          }
+                      }
+                  }
+                  Ok(())
+              }
               Commands::Context { subcommand } => {
                   let project = project::Project::discover()?;
                   let cfg = config::Config::load(&project)?;
@@ -1218,5 +1322,22 @@ mod tests {
         // Test absolute imports
         let missing = resolve_import_to_file("ai.missing", "main.py", "Python", project_root);
         assert_eq!(missing, "");
+    }
+
+    #[test]
+    fn test_analyze_cli_parsing() {
+        // Test 1: cis analyze
+        let cli = Cli::try_parse_from(vec!["cis", "analyze"]).unwrap();
+        match cli.command {
+            Commands::Analyze { json } => assert!(!json, "json should be false"),
+            _ => panic!("Expected Commands::Analyze"),
+        }
+
+        // Test 2: cis analyze --json
+        let cli_json = Cli::try_parse_from(vec!["cis", "analyze", "--json"]).unwrap();
+        match cli_json.command {
+            Commands::Analyze { json } => assert!(json, "json should be true"),
+            _ => panic!("Expected Commands::Analyze"),
+        }
     }
 }
