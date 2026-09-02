@@ -179,7 +179,11 @@ impl ToolHandler for ProjectOverviewTool {
         Some(McpTool {
             name: "project_overview".to_string(),
             description: "Returns project root, C.I.S. directory structure, and file counts".to_string(),
-            input_schema: None,
+            input_schema: Some(McpToolInputSchema {
+                schema_type: "object".to_string(),
+                properties: std::collections::HashMap::new(),
+                required: vec![],
+            }),
         })
     }
     fn execute(&self, _params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
@@ -211,7 +215,15 @@ impl ToolHandler for SearchTool {
         Some(McpTool {
             name: "search".to_string(),
             description: "Search the codebase for symbols, files, and content".to_string(),
-            input_schema: None,
+            input_schema: Some(McpToolInputSchema {
+                schema_type: "object".to_string(),
+                properties: {
+                    let mut props = std::collections::HashMap::new();
+                    props.insert("query".to_string(), serde_json::json!({ "type": "string", "description": "Search query string" }));
+                    props
+                },
+                required: vec!["query".to_string()],
+            }),
         })
     }
     fn execute(&self, params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
