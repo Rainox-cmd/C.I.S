@@ -62,8 +62,6 @@ const ASSET_EXTS: &[&str] = &[".html", ".css", ".md", ".txt", ".rst"];
 
 const CHUNK_SIZE: usize = 8 * 1024;
 
-const DEFAULT_MAX_FILE_SIZE: u64 = 5 * 1024 * 1024;
-
 const BUILTIN_IGNORE_DIRS: &[&str] = &[
     ".git",
     "node_modules",
@@ -174,18 +172,6 @@ pub enum SkipReason {
     AccessDenied,
     IsSymlink,
     Other(String),
-}
-
-impl SkipReason {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SkipReason::TooLarge => "file_size_exceeded",
-            SkipReason::UnknownExtension => "unknown_extension",
-            SkipReason::AccessDenied => "access_denied",
-            SkipReason::IsSymlink => "symlink",
-            SkipReason::Other(_) => "other",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -309,8 +295,6 @@ impl IgnoreRules {
 #[derive(Debug)]
 pub struct Scanner {
     root: PathBuf,
-    respect_gitignore: bool,
-    respect_cisignore: bool,
     max_file_size_bytes: u64,
     ignore_rules: IgnoreRules,
 }
@@ -344,8 +328,6 @@ impl Scanner {
 
         Self {
             root,
-            respect_gitignore,
-            respect_cisignore,
             max_file_size_bytes,
             ignore_rules,
         }
@@ -1155,15 +1137,6 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
         }
-    }
-
-    #[test]
-    fn test_scan_skip_reason_as_str() {
-        assert_eq!(SkipReason::TooLarge.as_str(), "file_size_exceeded");
-        assert_eq!(SkipReason::UnknownExtension.as_str(), "unknown_extension");
-        assert_eq!(SkipReason::AccessDenied.as_str(), "access_denied");
-        assert_eq!(SkipReason::IsSymlink.as_str(), "symlink");
-        assert_eq!(SkipReason::Other("test".to_string()).as_str(), "other");
     }
 
     #[test]
