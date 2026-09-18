@@ -1,3 +1,4 @@
+// Force rebuild
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 use std::collections::HashMap;
@@ -48,19 +49,47 @@ pub struct EntryPoint {
 
 impl Index {
     pub fn open(project: &Project, _config: &Config) -> Result<Self> {
-        let conn = Connection::open(project.db_path()).with_context(|| {
-            format!("Failed to open database at {}", project.db_path().display())
-        })?;
+        let mut retries = 50;
+        let mut last_err = None;
+        
+        while retries > 0 {
+            if let Ok(conn) = Connection::open(project.db_path()) {
+                let mut success = true;
+                
+                if _config.database.wal_mode {
+                    if let Err(e) = conn.execute_batch("PRAGMA journal_mode=WAL;") {
+                        eprintln!("Warning: Failed to set WAL mode ({}).", e);
+                    }
+                } else {
+                    let query = format!("PRAGMA journal_mode={};", _config.database.journal_mode);
+                    if let Err(e) = conn.execute_batch(&query) {
+                        eprintln!("Warning: Failed to set journal mode ({}).", e);
+                    }
+                }
 
-        if _config.database.wal_mode {
-            conn.execute_batch("PRAGMA journal_mode=WAL;").context("Failed to set WAL mode")?;
+                if let Err(e) = conn.execute_batch("PRAGMA foreign_keys = ON;") {
+                    success = false;
+                    last_err = Some(anyhow::anyhow!("Failed to enable foreign keys: {}", e));
+                }
+
+                if success {
+                    let index = Self { conn };
+                    match index.ensure_schema() {
+                        Ok(_) => return Ok(index),
+                        Err(e) => {
+                            last_err = Some(anyhow::anyhow!("Failed to create schema: {}", e));
+                        }
+                    }
+                }
+            } else {
+                last_err = Some(anyhow::anyhow!("Failed to open database at {}", project.db_path().display()));
+            }
+            
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            retries -= 1;
         }
-
-        conn.execute_batch("PRAGMA foreign_keys = ON;").context("Failed to enable foreign keys")?;
-
-        let index = Self { conn };
-        index.ensure_schema()?;
-        Ok(index)
+        
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("Failed to open database after retries")))
     }
 
     pub fn conn(&self) -> &Connection {
@@ -489,10 +518,10 @@ impl Index {
 
     pub fn get_dependencies(&self, rel_path: &str) -> Result<Vec<Dependency>> {
         let mut stmt = self.conn.prepare(
-            "SELECT sf.rel_path, tf.rel_path
-             FROM dependencies d
-             JOIN files sf ON d.source_file_id = sf.id
-             JOIN files tf ON d.target_file_id = tf.id
+            "SELECT DISTINCT sf.rel_path, tf.rel_path
+             FROM edges e
+             JOIN files sf ON e.source_file_id = sf.id
+             JOIN files tf ON e.target_file_id = tf.id
              WHERE sf.rel_path = ?1",
         )?;
         let rows = stmt.query_map([rel_path], |row| {

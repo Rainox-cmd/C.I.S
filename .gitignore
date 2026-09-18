@@ -2,7 +2,7 @@
 /target/
 **/target/
 
-# CI build cache (not committed, cached via GitHub Actions)
+# Build cache directories
 build_cache/
 
 # C.I.S runtime data

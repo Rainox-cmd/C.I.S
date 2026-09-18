@@ -38,8 +38,14 @@ pub struct GitClient {
 
 impl GitClient {
     pub fn new(repo_path: &Path) -> Result<Self> {
-        let canonical = std::fs::canonicalize(repo_path)
-            .with_context(|| format!("Failed to canonicalize path: {}", repo_path.display()))?;
+        let canonical = crate::security::canonicalize_path(repo_path)
+            .unwrap_or_else(|_| {
+                if repo_path.is_absolute() {
+                    repo_path.to_path_buf()
+                } else {
+                    std::env::current_dir().unwrap_or_default().join(repo_path)
+                }
+            });
         Ok(Self { repo_path: canonical })
     }
 

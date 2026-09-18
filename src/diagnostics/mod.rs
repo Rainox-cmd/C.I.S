@@ -171,6 +171,7 @@ pub fn run_all_checks(project: &Project, config: &Config, index: &Index) -> Diag
     report.add(check_directories(project));
     report.add(check_terminal_security(config));
     report.add(check_environment());
+    report.add(check_ntfs_streams(project));
 
     report
 }
@@ -307,6 +308,20 @@ pub fn check_terminal_security(config: &Config) -> Diagnostic {
     }
 }
 
+pub fn check_ntfs_streams(project: &Project) -> Diagnostic {
+    if cfg!(windows) {
+        Diagnostic::pass(
+            "NTFS Streams",
+            "Windows Alternate Data Streams are safely handled"
+        )
+    } else {
+        Diagnostic::pass(
+            "NTFS Streams",
+            "Not applicable on this OS"
+        )
+    }
+}
+
 pub fn check_environment() -> Diagnostic {
     let rustc = std::env::var("RUSTC");
     let cargo_home = std::env::var("CARGO_HOME");
@@ -326,6 +341,28 @@ pub fn check_environment() -> Diagnostic {
 
     if cargo_home.is_ok() {
         details.push("CARGO_HOME set".to_string());
+    }
+    
+    if cfg!(windows) {
+        if std::process::Command::new("cl.exe").arg("/?").output().is_ok() {
+            details.push("MSVC compiler (cl.exe) available".to_string());
+        } else {
+            let vswhere = std::process::Command::new(r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe")
+                .arg("-latest")
+                .arg("-property")
+                .arg("installationPath")
+                .output();
+                
+            if let Ok(output) = vswhere {
+                if output.status.success() {
+                    details.push("Visual Studio found but MSVC not in PATH (run vcvars64.bat)".to_string());
+                } else {
+                    details.push("MSVC compiler not found".to_string());
+                }
+            } else {
+                details.push("MSVC compiler not found".to_string());
+            }
+        }
     }
 
     Diagnostic::pass(

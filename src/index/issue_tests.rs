@@ -6,7 +6,8 @@ use tempfile::tempdir;
 
 fn setup() -> (tempfile::TempDir, Project, Config, Index) {
     let dir = tempdir().unwrap();
-    let project = Project::new(dir.path().to_path_buf());
+    let project = Project::new(dir.path().to_path_buf()).unwrap();
+    project.init().unwrap();
     let cfg = Config::default();
     let idx = Index::open(&project, &cfg).unwrap();
     (dir, project, cfg, idx)

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cis": {
+      "command": "C:\\Users\\Admin\\Desktop\\C.I.S\\target\\release\\cis.exe",
+      "args": ["mcp"],
+      "env": {}
+    }
+  }
+}

@@ -60,6 +60,8 @@ const CONFIG_EXTS: &[&str] = &[
 
 const ASSET_EXTS: &[&str] = &[".html", ".css", ".md", ".txt", ".rst"];
 
+pub const DEFAULT_MAX_FILE_SIZE: u64 = 5 * 1024 * 1024;
+
 const CHUNK_SIZE: usize = 8 * 1024;
 
 const BUILTIN_IGNORE_DIRS: &[&str] = &[
@@ -367,6 +369,13 @@ impl Scanner {
                     });
                 }
                 continue;
+            }
+
+            if cfg!(windows) {
+                let name = entry.file_name().to_string_lossy();
+                if name.contains(':') {
+                    continue;
+                }
             }
 
             result.total_files_discovered += 1;

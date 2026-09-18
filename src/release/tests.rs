@@ -64,15 +64,36 @@ fn test_release_validate_build() {
 fn test_changelog_path() {
     let (_dir, project) = setup();
     let path = ReleaseManager::changelog_path(&project);
-    assert!(path.to_string_lossy().ends_with("CHANGELOG.md"));
+    assert!(path.is_absolute());
+    assert_eq!(path, project.root.join("CHANGELOG.md"));
 }
 
 #[test]
 fn test_generate_changelog() {
     let (_dir, project) = setup();
+    
+    // We are in a temp dir, not a git repo. git_log should gracefully return empty commits.
     let result = ReleaseManager::generate_changelog(&project);
     assert!(result.is_ok());
     let changelog = result.unwrap();
     assert!(changelog.contains("Changelog"));
     assert!(changelog.contains(&ReleaseManager::version()));
+    // Should contain "Changes" heading
+    assert!(changelog.contains("### Changes"));
+}
+
+#[test]
+fn test_git_log_uses_project_root() {
+    let dir = tempdir().unwrap();
+    let nested = dir.path().join("nested").join("deep");
+    std::fs::create_dir_all(&nested).unwrap();
+    
+    // Project root is nested/deep
+    let project = Project::new(nested.clone()).unwrap();
+    project.init().unwrap();
+    
+    // We ensure that we don't crash and we resolve correctly against the nested project root.
+    // It should detect it's not a git repo and return empty string, rather than checking CWD.
+    let result = ReleaseManager::generate_changelog(&project);
+    assert!(result.is_ok());
 }

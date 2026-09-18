@@ -54,7 +54,7 @@ impl McpServer {
     pub fn process_request(&self, req: &JsonRpcRequest) -> JsonRpcResponse {
         match req.method.as_str() {
             MCP_METHOD_INITIALIZE => {
-                JsonRpcResponse::success(req.id, req.id_str.clone(), json!({
+                JsonRpcResponse::success(req.id.clone(), json!({
                     "protocolVersion": "2024-11-05",
                     "capabilities": {
                         "tools": {},
@@ -73,7 +73,7 @@ impl McpServer {
                     description: t.description().to_string(),
                     input_schema: None,
                 })).collect();
-                JsonRpcResponse::success(req.id, req.id_str.clone(), json!({"tools": tools}))
+                JsonRpcResponse::success(req.id.clone(), json!({"tools": tools}))
             }
             MCP_METHOD_CALL_TOOL => {
                 let params = req.params.as_ref().unwrap_or(&serde_json::Value::Null);
@@ -91,24 +91,22 @@ impl McpServer {
                                 let mut budget = self.budget.lock().unwrap();
                                 if !budget.allocate(size) {
                                     return JsonRpcResponse::error(
-                                        req.id,
-                                        req.id_str.clone(),
+                                        req.id.clone(),
                                         -32603,
                                         format!("Context budget exceeded. Payload size {} bytes exceeds remaining budget {} bytes", size, budget.remaining_bytes())
                                     );
                                 }
                                 
-                                JsonRpcResponse::success(req.id, req.id_str.clone(), result_val)
+                                JsonRpcResponse::success(req.id.clone(), result_val)
                             }
                             Err(e) => {
-                                JsonRpcResponse::error(req.id, req.id_str.clone(), e.code, e.message)
+                                JsonRpcResponse::error(req.id.clone(), e.code, e.message)
                             }
                         }
                     }
                     None => {
                         JsonRpcResponse::error(
-                            req.id,
-                            req.id_str.clone(),
+                            req.id.clone(),
                             -32601,
                             format!("Unknown tool: {}", tool_name),
                         )
@@ -116,7 +114,7 @@ impl McpServer {
                 }
             }
             _ => {
-                JsonRpcResponse::error(req.id, req.id_str.clone(), -32601, format!("Method not found: {}", req.method))
+                JsonRpcResponse::error(req.id.clone(), -32601, format!("Method not found: {}", req.method))
             }
         }
     }
@@ -133,19 +131,31 @@ impl McpServer {
             if line.is_empty() {
                 continue;
             }
+            
+            tracing::info!("MCP Request: {}", line);
 
             let req: JsonRpcRequest = match serde_json::from_str(line) {
                 Ok(req) => req,
                 Err(e) => {
-                    let resp = JsonRpcResponse::error(None, None, -32700, format!("Parse error: {}", e));
-                    let _ = writeln!(stdout_lock, "{}", serde_json::to_string(&resp).unwrap());
+                    let resp = JsonRpcResponse::error(None, -32700, format!("Parse error: {}", e));
+                    let resp_str = serde_json::to_string(&resp).unwrap();
+                    tracing::error!("MCP Parse Error: {} -> {}", e, resp_str);
+                    let _ = writeln!(stdout_lock, "{}", resp_str);
                     continue;
                 }
             };
 
+            let is_notification = req.id.is_none();
             let resp = self.process_request(&req);
-            let _ = writeln!(stdout_lock, "{}", serde_json::to_string(&resp).unwrap());
-            let _ = stdout_lock.flush();
+            
+            if !is_notification {
+                let resp_str = serde_json::to_string(&resp).unwrap();
+                tracing::info!("MCP Response: {}", resp_str);
+                let _ = writeln!(stdout_lock, "{}", resp_str);
+                let _ = stdout_lock.flush();
+            } else {
+                tracing::info!("MCP Notification received and ignored: {}", req.method);
+            }
         }
 
         Ok(())
@@ -189,7 +199,7 @@ impl ToolHandler for ProjectOverviewTool {
     fn execute(&self, _params: &serde_json::Value) -> Result<McpToolResult, JsonRpcError> {
         let cis_dir = format!("{}/.cis", self.project_root);
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
+            content: vec![McpContent::json(json!({
                 "project_root": self.project_root,
                 "cis_dir": cis_dir,
                 "context_dir": format!("{}/.cis/context", self.project_root),
@@ -252,7 +262,7 @@ impl ToolHandler for SearchTool {
         })).collect();
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!(json_results))],
+            content: vec![McpContent::json(json!(json_results))],
             is_error: vec![false],
         })
     }
@@ -302,7 +312,7 @@ impl ToolHandler for FileContextTool {
         let json_deps: Vec<_> = dependencies.into_iter().map(|d| d.target_file).collect();
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
+            content: vec![McpContent::json(json!({
                 "path": path,
                 "symbols": json_symbols,
                 "dependencies": json_deps,
@@ -354,7 +364,7 @@ impl ToolHandler for SymbolContextTool {
         })).collect();
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
+            content: vec![McpContent::json(json!({
                 "symbol": symbol,
                 "locations": json_symbols
             }))],
@@ -397,7 +407,7 @@ impl ToolHandler for DependencyContextTool {
         };
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
+            content: vec![McpContent::json(json!({
                 "path": path,
                 "transitive": transitive,
                 "dependencies": deps
@@ -436,7 +446,7 @@ impl ToolHandler for ImpactAnalysisTool {
         let impact = index.get_reverse_dependencies(path).unwrap_or_default();
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
+            content: vec![McpContent::json(json!({
                 "path": path,
                 "affected_files": impact
             }))],
@@ -496,7 +506,7 @@ impl ToolHandler for MemoryContextTool {
         };
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(result)],
+            content: vec![McpContent::json(result)],
             is_error: vec![false],
         })
     }
@@ -560,7 +570,7 @@ impl ToolHandler for SessionContextTool {
         };
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(result)],
+            content: vec![McpContent::json(result)],
             is_error: vec![false],
         })
     }
@@ -593,7 +603,7 @@ impl ToolHandler for GitContextTool {
 
         if !git.is_repo() {
             return Ok(McpToolResult {
-                content: vec![McpContent::Json(json!({"error": "Not a git repository"}))],
+                content: vec![McpContent::json(json!({"error": "Not a git repository"}))],
                 is_error: vec![true],
             });
         }
@@ -618,7 +628,7 @@ impl ToolHandler for GitContextTool {
         }
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(result)],
+            content: vec![McpContent::json(result)],
             is_error: vec![false],
         })
     }
@@ -666,7 +676,7 @@ impl ToolHandler for DiagnosticsTool {
         })).collect();
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
+            content: vec![McpContent::json(json!({
                 "is_healthy": is_healthy,
                 "has_warnings": has_warnings,
                 "checks": checks,
@@ -725,7 +735,7 @@ impl ToolHandler for RunCommandTool {
         let is_err = result.blocked || result.requires_confirmation || result.exit_code != 0 || result.timed_out;
 
         Ok(McpToolResult {
-            content: vec![McpContent::Json(json!({
+            content: vec![McpContent::json(json!({
                 "command": result.command,
                 "args": result.args,
                 "exit_code": result.exit_code,

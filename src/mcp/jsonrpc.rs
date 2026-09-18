@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id_str: Option<String>,
+    pub id: Option<serde_json::Value>,
     pub method: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
@@ -16,9 +14,7 @@ pub struct JsonRpcRequest {
 pub struct JsonRpcResponse {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id_str: Option<String>,
+    pub id: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,26 +31,24 @@ pub struct JsonRpcError {
 
 impl JsonRpcRequest {
     pub fn has_valid_id(&self) -> bool {
-        self.id.is_some() || self.id_str.is_some()
+        self.id.is_some()
     }
 }
 
 impl JsonRpcResponse {
-    pub fn success(id: Option<u64>, id_str: Option<String>, result: serde_json::Value) -> Self {
+    pub fn success(id: Option<serde_json::Value>, result: serde_json::Value) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             id,
-            id_str,
             result: Some(result),
             error: None,
         }
     }
 
-    pub fn error(id: Option<u64>, id_str: Option<String>, code: i32, message: String) -> Self {
+    pub fn error(id: Option<serde_json::Value>, code: i32, message: String) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             id,
-            id_str,
             result: None,
             error: Some(JsonRpcError {
                 code,
@@ -91,14 +85,18 @@ pub struct McpToolResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
+#[serde(tag = "type")]
 pub enum McpContent {
     #[serde(rename = "text")]
-    Text(String),
-    #[serde(rename = "json")]
-    Json(serde_json::Value),
-    #[serde(rename = "file")]
-    File(String),
+    Text { text: String },
+}
+
+impl McpContent {
+    pub fn json(v: serde_json::Value) -> Self {
+        McpContent::Text {
+            text: serde_json::to_string(&v).unwrap_or_default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -202,8 +202,41 @@ impl TerminalExecutor {
 
         let start = Instant::now();
 
-        let mut child = Command::new(command)
-            .args(args)
+        let is_windows_builtin = cfg!(windows) && ["echo", "dir", "type", "copy", "move", "del", "ren", "md", "cd"].contains(&command.to_lowercase().as_str());
+
+        if is_windows_builtin {
+            let metachars = ['&', '|', ';', '%', '^', '<', '>'];
+            if full_cmd_string.chars().any(|c| metachars.contains(&c)) {
+                let result = ExecutionResult {
+                    command: command.to_string(),
+                    args: args.iter().map(|s| s.to_string()).collect(),
+                    exit_code: -1,
+                    stdout: String::new(),
+                    stderr: "Command blocked: contains shell metacharacters".to_string(),
+                    duration: Duration::ZERO,
+                    timed_out: false,
+                    blocked: true,
+                    block_reason: Some("Shell metacharacters are not allowed".to_string()),
+                    requires_confirmation: false,
+                    risk_description: None,
+                    audit_log_path: self.audit_log_path(),
+                };
+                self.write_audit_log(&result, cwd, risk_level, false);
+                return Ok(result);
+            }
+        }
+
+        let mut cmd = if is_windows_builtin {
+            let mut c = Command::new("cmd.exe");
+            c.arg("/d").arg("/c").arg(command).args(args);
+            c
+        } else {
+            let mut c = Command::new(command);
+            c.args(args);
+            c
+        };
+
+        let mut child = cmd
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .current_dir(&resolved_cwd)

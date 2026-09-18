@@ -32,12 +32,49 @@ impl PathSecurity {
 }
 
 pub fn canonicalize_path(path: &Path) -> Result<PathBuf, PathContainmentError> {
-    let canonical =
-        std::fs::canonicalize(path).map_err(|e| PathContainmentError::Canonicalization {
-            path: path.to_string_lossy().to_string(),
-            source: e,
-        })?;
-    Ok(canonical)
+    match std::fs::canonicalize(path) {
+        Ok(canonical) => {
+            let s = canonical.to_string_lossy();
+            if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+                Ok(PathBuf::from(format!(r"\\{}", stripped)))
+            } else if let Some(stripped) = s.strip_prefix(r"\\?\") {
+                Ok(PathBuf::from(stripped))
+            } else {
+                Ok(canonical)
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(5) => {
+            let norm = if path.is_absolute() {
+                normalize_path(path)
+            } else if let Ok(cwd) = std::env::current_dir() {
+                normalize_path(&cwd.join(path))
+            } else {
+                normalize_path(path)
+            };
+            if cfg!(windows) {
+                if let Some(file_name) = norm.file_stem().and_then(|s| s.to_str()) {
+                    let upper = file_name.to_uppercase();
+                    let reserved = ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"];
+                    if reserved.contains(&upper.as_str()) {
+                        return Err(PathContainmentError::Canonicalization {
+                            path: path.to_string_lossy().to_string(),
+                            source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "Reserved Windows device name"),
+                        });
+                    }
+                }
+            }
+            Ok(norm)
+        }
+        Err(e) => {
+            if path.is_absolute() {
+                Ok(normalize_path(path))
+            } else if let Ok(cwd) = std::env::current_dir() {
+                Ok(normalize_path(&cwd.join(path)))
+            } else {
+                Ok(normalize_path(path))
+            }
+        }
+    }
 }
 
 pub fn check_path_containment(path: &Path, base: &Path) -> Result<PathBuf, PathContainmentError> {

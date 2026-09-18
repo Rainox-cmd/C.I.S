@@ -2,13 +2,87 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
 use crate::project::Project;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReleaseConfig {
+    pub version: String,
+    pub version_major: u32,
+    pub version_minor: u32,
+    pub version_patch: u32,
+    pub targets: Vec<ReleaseTarget>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReleaseTarget {
+    pub platform: String,
+    pub arch: String,
+    pub extension: String,
+    pub package_format: String,
+}
+
+impl Default for ReleaseConfig {
+    fn default() -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            version_major: 1,
+            version_minor: 0,
+            version_patch: 0,
+            targets: vec![
+                ReleaseTarget {
+                    platform: "windows".to_string(),
+                    arch: "x86_64".to_string(),
+                    extension: "exe".to_string(),
+                    package_format: "msi".to_string(),
+                },
+                ReleaseTarget {
+                    platform: "linux".to_string(),
+                    arch: "x86_64".to_string(),
+                    extension: "".to_string(),
+                    package_format: "deb".to_string(),
+                },
+                ReleaseTarget {
+                    platform: "linux".to_string(),
+                    arch: "x86_64".to_string(),
+                    extension: "".to_string(),
+                    package_format: "rpm".to_string(),
+                },
+                ReleaseTarget {
+                    platform: "macos".to_string(),
+                    arch: "x86_64".to_string(),
+                    extension: "".to_string(),
+                    package_format: "dmg".to_string(),
+                },
+                ReleaseTarget {
+                    platform: "macos".to_string(),
+                    arch: "aarch64".to_string(),
+                    extension: "".to_string(),
+                    package_format: "dmg".to_string(),
+                },
+            ],
+        }
+    }
+}
 
 pub struct ReleaseManager;
 
 impl ReleaseManager {
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
+    }
+
+    pub fn version_parts() -> (u32, u32, u32) {
+        let parts: Vec<&str> = env!("CARGO_PKG_VERSION").split('.').collect();
+        let major = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let patch = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+        (major, minor, patch)
+    }
+
+    pub fn build_release_name(platform: &str, arch: &str, package_format: &str) -> String {
+        format!("cis-{}-{}.{}", platform, arch, package_format)
     }
 
     pub fn changelog_path(project: &Project) -> PathBuf {

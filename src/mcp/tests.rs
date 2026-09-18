@@ -47,8 +47,7 @@ fn test_mcp_protocol_compliance() {
 
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
-        id: Some(1),
-        id_str: None,
+        id: Some(serde_json::json!(1)),
         method: "initialize".to_string(),
         params: Some(json!({})),
     };
@@ -73,7 +72,7 @@ fn test_mcp_tool_list() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(2),
-        id_str: None,
+
         method: "tools/list".to_string(),
         params: None,
     };
@@ -95,7 +94,7 @@ fn test_mcp_tool_call_project_overview() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(3),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "project_overview",
@@ -118,7 +117,7 @@ fn test_mcp_tool_call_search() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(4),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "search",
@@ -141,7 +140,7 @@ fn test_mcp_tool_call_unknown_tool() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(5),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "nonexistent_tool",
@@ -163,7 +162,7 @@ fn test_mcp_permission_enforcement_run_command_blocked() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(6),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "run_command",
@@ -223,7 +222,7 @@ fn test_mcp_error_handling_missing_param() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(7),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "search",
@@ -245,7 +244,7 @@ fn test_mcp_method_not_found() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(8),
-        id_str: None,
+
         method: "unknown_method".to_string(),
         params: None,
     };
@@ -264,7 +263,7 @@ fn test_mcp_all_tools_present() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(9),
-        id_str: None,
+
         method: "tools/list".to_string(),
         params: None,
     };
@@ -331,8 +330,8 @@ fn test_mcp_all_tool_handlers() {
     for (name, args) in &tool_test_args {
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
-            id: Some(1),
-            id_str: None,
+            id: Some(serde_json::json!(1)),
+
             method: "tools/call".to_string(),
             params: Some(json!({"name": name, "arguments": args})),
         };
@@ -368,7 +367,7 @@ fn test_mcp_memory_context_tool() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(10),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "memory_context",
@@ -390,7 +389,7 @@ fn test_mcp_git_context_tool() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(11),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "git_context",
@@ -412,7 +411,7 @@ fn test_mcp_diagnostics_tool() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(12),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "diagnostics",
@@ -434,7 +433,7 @@ fn test_mcp_run_command_tool_blocked() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(13),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "run_command",
@@ -460,7 +459,7 @@ fn test_mcp_context_budget_enforced_in_process_request() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(100),
-        id_str: None,
+
         method: "tools/call".to_string(),
         // project_overview returns slightly more than 100 bytes of JSON
         params: Some(json!({"name": "project_overview", "arguments": {}})),
@@ -489,7 +488,7 @@ fn test_mcp_context_budget_success() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(101),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({"name": "project_overview", "arguments": {}})),
     };
@@ -506,8 +505,14 @@ fn test_mcp_context_budget_success() {
 fn test_mcp_run_command_budget_enforcement() {
     let (_dir, project) = setup();
     let mut cfg = Config::default();
-    // Allow 'echo'
-    cfg.security.command_allowlist.push("echo".to_string());
+    
+    #[cfg(windows)]
+    let (cmd, args) = ("cmd", vec!["/c", "echo", "this is a very long string that will definitely exceed the fifty byte budget limit we just set"]);
+    #[cfg(not(windows))]
+    let (cmd, args) = ("echo", vec!["this is a very long string that will definitely exceed the fifty byte budget limit we just set"]);
+
+    // Allow command
+    cfg.security.command_allowlist.push(cmd.to_string());
     // Small budget
     cfg.context.max_session_context_bytes = 50;
     
@@ -517,11 +522,11 @@ fn test_mcp_run_command_budget_enforcement() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(102),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "run_command",
-            "arguments": {"command": "echo", "args": ["this is a very long string that will definitely exceed the fifty byte budget limit we just set"], "skip_confirmation": true}
+            "arguments": {"command": cmd, "args": args, "skip_confirmation": true}
         })),
     };
 
@@ -543,7 +548,7 @@ fn test_mcp_session_context_tool_actions() {
     let req_set = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(103),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "session_context",
@@ -562,7 +567,7 @@ fn test_mcp_session_context_tool_actions() {
     let req_get = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(104),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "session_context",
@@ -582,7 +587,7 @@ fn test_mcp_session_context_tool_actions() {
     let req_delete = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(105),
-        id_str: None,
+
         method: "tools/call".to_string(),
         params: Some(json!({
             "name": "session_context",
@@ -606,7 +611,7 @@ fn test_mcp_tool_schemas() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(106),
-        id_str: None,
+
         method: "tools/list".to_string(),
         params: None,
     };
