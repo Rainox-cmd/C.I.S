@@ -21,6 +21,11 @@ The current implementation priority is **local-first**.
 - Google Drive, OneDrive, and other cloud providers remain future optional integrations.
 - The design remains open to additional features after testing and research.
 
+## 📖 Quick Start & Documentation
+
+Want to get your AI agent connected to C.I.S., or use the commands manually?  
+👉 **[Read the MCP Setup & CLI Guide here!](docs/mcp-guide.md)**
+
 ---
 
 ## 1. Vision
